@@ -1,0 +1,23 @@
+{
+  "name": "e-comm",
+  "version": "1.0.0",
+  "description": "MERN E-commerce",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node backend/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TahoshinIslam/Shoe_Ecommerce.git"
+  },
+  "author": "Tahoshin",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/TahoshinIslam/Shoe_Ecommerce/issues"
+  },
+  "homepage": "https://github.com/TahoshinIslam/Shoe_Ecommerce#readme",
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
