@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Default theme tokens — these are overwritten at runtime by ThemeProvider
+     after it fetches /api/theme/active, but having defaults prevents a flash
+     of un-themed content (FOUC). All colors are "R G B" triplets so Tailwind's
+     alpha syntax (bg-primary/50) works. */
+  :root {
+    --color-primary: 10 10 10;
+    --color-primary-foreground: 255 255 255;
+    --color-accent: 249 115 22;
+    --color-accent-foreground: 255 255 255;
+    --color-background: 255 255 255;
+    --color-foreground: 10 10 10;
+    --color-muted: 245 245 245;
+    --color-muted-foreground: 115 115 115;
+    --color-border: 229 229 229;
+    --color-success: 16 185 129;
+    --color-warning: 245 158 11;
+    --color-danger: 239 68 68;
+
+    --radius: 0.75rem;
+    --font-heading: "Space Grotesk", Inter, system-ui, sans-serif;
+    --font-body: "Inter", system-ui, sans-serif;
+  }
+
+  .dark {
+    --color-primary: 250 250 250;
+    --color-primary-foreground: 10 10 10;
+    --color-accent: 251 146 60;
+    --color-accent-foreground: 10 10 10;
+    --color-background: 10 10 10;
+    --color-foreground: 250 250 250;
+    --color-muted: 38 38 38;
+    --color-muted-foreground: 163 163 163;
+    --color-border: 38 38 38;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    font-family: var(--font-body);
+    @apply bg-background text-foreground;
+    transition: background-color 300ms ease, color 300ms ease;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    @apply tracking-tight;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/50; }
+
+  /* Image placeholder while loading */
+  img { @apply transition-opacity duration-300; }
+}
+
+@layer components {
+  .container-x {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--color-muted) / 0.5) 0%,
+      rgb(var(--color-muted-foreground) / 0.15) 50%,
+      rgb(var(--color-muted) / 0.5) 100%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer rounded-md;
+  }
+
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
+  .glass {
+    @apply bg-background/70 backdrop-blur-xl backdrop-saturate-150;
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .text-pretty { text-wrap: pretty; }
+
+  /* Hide scrollbar for horizontal scrollers */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}

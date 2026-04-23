@@ -8,26 +8,13 @@ import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import mongoSanitize from "express-mongo-sanitize";
 import hpp from "hpp";
+import xss from "xss-clean";
 import path from "path";
 import { fileURLToPath } from "url";
 
 import connectDB from "./config/db.js";
 import { apiLimiter } from "./middleware/rateLimiter.js";
 import { notFound, errorHandler } from "./middleware/errorMiddleware.js";
-
-// --- eager model imports (guarantee registration before populate queries) ---
-import "./models/userModel.js";
-import "./models/brandModel.js";
-import "./models/categoryModel.js";
-import "./models/productModel.js";
-import "./models/orderModel.js";
-import "./models/cartModel.js";
-import "./models/wishlistModel.js";
-import "./models/reviewModel.js";
-import "./models/addressModel.js";
-import "./models/couponModel.js";
-import "./models/paymentModel.js";
-import "./models/themeModel.js";
 
 // --- route imports ---
 import userRoutes from "./routes/userRoutes.js";
@@ -57,30 +44,24 @@ const port = process.env.PORT || 5001;
 // --- DB ---
 connectDB();
 
-// --- trust proxy ---
+// --- trust proxy (needed for rate-limit behind Nginx/Heroku/Vercel) ---
 app.set("trust proxy", 1);
 
 // --- Security headers ---
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
-    contentSecurityPolicy: false, // APIs don't need CSP; avoids accidental blocks
   }),
 );
 
 // --- CORS (allowlist for cookie-based auth) ---
-const allowedOrigins = (
-  process.env.CLIENT_URL || "http://localhost:3000,http://localhost:3001"
-)
+const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:3000")
   .split(",")
   .map((o) => o.trim());
 app.use(
   cors({
     origin: (origin, cb) => {
-      // allow tools like Postman (no origin) and any localhost port in dev
-      if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin)) return cb(null, true);
-      if (/^http:\/\/localhost:\d+$/.test(origin)) return cb(null, true);
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error("CORS blocked for origin: " + origin));
     },
     credentials: true,
@@ -99,27 +80,18 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-// --- Input hardening ---
-// NOTE: `xss-clean` was removed — it is abandoned (no updates since 2019) and
-// is known to throw on newer Node versions. Modern approach: use express-validator
-// on untrusted inputs at the route level (we already do this).
-// express-mongo-sanitize strips keys starting with "$" to prevent NoSQL injection.
-app.use(
-  mongoSanitize({
-    // Don't mutate req.query — just log/skip instead. This prevents crashes
-    // on newer Express where req.query can be a getter.
-    replaceWith: "_",
-  }),
-);
+// --- Sanitize inputs ---
+app.use(mongoSanitize());
+app.use(xss());
 app.use(hpp());
 
 // --- Logging ---
-if (process.env.NODE_ENV !== "production") app.use(morgan("dev"));
+if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
 
 // --- Global rate limiter ---
 app.use("/api", apiLimiter);
 
-// --- Static uploads ---
+// --- Static uploads (served from /uploads) ---
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 // --- Health check ---
