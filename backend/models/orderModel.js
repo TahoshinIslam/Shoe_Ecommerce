@@ -7,27 +7,15 @@ const orderItemSchema = new mongoose.Schema(
       ref: "products",
       required: [true, "Product is required"],
     },
-    name: {
-      // snapshot at purchase time
-      type: String,
-      required: true,
-    },
-    image: {
-      // snapshot at purchase time
-      type: String,
-      required: true,
-    },
-    size: {
-      type: String,
-      required: [true, "Size is required"],
-    },
+    name: { type: String, required: true },
+    image: { type: String, required: true },
+    size: { type: String, required: [true, "Size is required"] },
     quantity: {
       type: Number,
       required: [true, "Quantity is required"],
       min: [1, "Quantity must be at least 1"],
     },
     price: {
-      // snapshot of price at purchase time
       type: Number,
       required: [true, "Price is required"],
     },
@@ -48,7 +36,6 @@ const orderSchema = new mongoose.Schema(
       validate: [(arr) => arr.length > 0, "Order must have at least one item"],
     },
     shippingAddress: {
-      // snapshot of address at purchase time
       fullName: { type: String, required: true },
       phone: { type: String, required: true },
       street: { type: String, required: true },
@@ -62,53 +49,45 @@ const orderSchema = new mongoose.Schema(
       ref: "coupons",
       default: null,
     },
-    subtotal: {
-      type: Number,
-      required: true,
-    },
-    shippingCost: {
-      type: Number,
-      default: 0,
-    },
-    discount: {
-      type: Number,
-      default: 0,
-    },
-    total: {
-      type: Number,
-      required: true,
-    },
+
+    // --- Pricing breakdown (all in `currency` below) ---
+    subtotal: { type: Number, required: true },
+    tax: { type: Number, default: 0 },
+    taxLabel: { type: String, default: "" }, // "VAT 15%" — for receipts
+    shippingCost: { type: Number, default: 0 },
+    shippingTier: { type: String, default: "" }, // "Inside Dhaka"
+    discount: { type: Number, default: 0 },
+    total: { type: Number, required: true },
+
+    // --- Region + currency snapshot ---
+    region: { type: String, default: "BD", enum: ["BD", "INTL"] },
+    currency: { type: String, default: "BDT", enum: ["BDT", "USD"] },
+
+    // --- Status ---
     status: {
       type: String,
       enum: [
-        "pending", // order placed, awaiting payment
-        "paid", // payment confirmed
-        "processing", // being prepared/packed
-        "shipped", // handed to courier
-        "delivered", // received by customer
-        "cancelled", // cancelled before shipment
-        "refunded", // refund issued
+        "pending",
+        "paid",
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled",
+        "refunded",
       ],
       default: "pending",
     },
-    trackingNumber: {
-      type: String,
-      default: "",
-    },
-    notes: {
-      type: String,
-      default: "",
-    },
-    deliveredAt: {
-      type: Date,
-    },
+    paymentMethod: { type: String, default: "" },
+    trackingNumber: { type: String, default: "" },
+    deliveredAt: { type: Date },
+    notes: { type: String, default: "" },
   },
   { timestamps: true },
 );
 
-// Index for user order history and status filters
+// Index for the most common admin query
+orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ user: 1, createdAt: -1 });
-orderSchema.index({ status: 1 });
 
-const orderModel = mongoose.model("orders", orderSchema);
-export default orderModel;
+const Order = mongoose.model("orders", orderSchema);
+export default Order;

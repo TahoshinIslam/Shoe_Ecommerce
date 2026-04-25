@@ -1,29 +1,31 @@
 import asyncHandler from "../middleware/asyncHandler.js";
 import Product from "../models/productModel.js";
 
-// Safely build a Mongo filter from req.query without external helpers
+// Only these fields can be filtered on via query string.
+// Anything else in ?foo=bar is silently ignored.
+const ALLOWED_FILTER_FIELDS = new Set([
+  "category",
+  "brand",
+  "gender",
+  "color",
+  "material",
+  "isFeatured",
+  "isActive",
+  "basePrice",
+]);
+
+// Build a safe Mongo filter from whitelisted query keys only.
 const buildFilter = (query, base = {}) => {
-  const {
-    search,
-    sort,
-    page,
-    limit,
-    fields,
-    featured,
-    ...rest
-  } = query;
+  const { search, featured } = query;
+  const filter = {};
 
-  const filter = { ...base };
-
-  // Full-text search (text index on name/description/tags)
   if (search) filter.$text = { $search: String(search) };
-
-  // Featured flag (accept "true"/"1")
   if (featured === "true" || featured === "1") filter.isFeatured = true;
 
-  // Pass through remaining keys, converting gte/gt/lte/lt to $-prefixed ops
-  for (const [key, val] of Object.entries(rest)) {
+  for (const [key, val] of Object.entries(query)) {
+    if (!ALLOWED_FILTER_FIELDS.has(key)) continue;
     if (val === undefined || val === "") continue;
+
     if (val !== null && typeof val === "object" && !Array.isArray(val)) {
       const converted = {};
       for (const [op, v] of Object.entries(val)) {
@@ -38,7 +40,36 @@ const buildFilter = (query, base = {}) => {
     }
   }
 
+  // Apply base filter LAST so it cannot be overridden by a query param.
+  // (e.g., a non-admin cannot set ?isActive=false to see inactive products.)
+  Object.assign(filter, base);
   return filter;
+};
+
+// Whitelist of fields a product-create/update payload is allowed to set.
+// Blocks things like rating, numReviews, slug, _id from being mass-assigned.
+const PRODUCT_WRITABLE_FIELDS = [
+  "name",
+  "description",
+  "category",
+  "brand",
+  "basePrice",
+  "discountPrice",
+  "images",
+  "sizes",
+  "gender",
+  "color",
+  "material",
+  "tags",
+  "isFeatured",
+];
+
+const pickWritable = (body) => {
+  const out = {};
+  for (const key of PRODUCT_WRITABLE_FIELDS) {
+    if (body[key] !== undefined) out[key] = body[key];
+  }
+  return out;
 };
 
 // @desc    Get all products
@@ -102,7 +133,9 @@ export const getProductByIdOrSlug = asyncHandler(async (req, res) => {
   const { idOrSlug } = req.params;
   const isId = /^[0-9a-fA-F]{24}$/.test(idOrSlug);
 
-  const product = await Product.findOne(isId ? { _id: idOrSlug } : { slug: idOrSlug })
+  const product = await Product.findOne(
+    isId ? { _id: idOrSlug } : { slug: idOrSlug },
+  )
     .populate("brand", "name slug")
     .populate("category", "name slug");
 
@@ -136,7 +169,8 @@ export const getRelated = asyncHandler(async (req, res) => {
 // ========== ADMIN ==========
 
 export const createProduct = asyncHandler(async (req, res) => {
-  const product = await Product.create(req.body);
+  const safe = pickWritable(req.body);
+  const product = await Product.create(safe);
   res.status(201).json({ success: true, product });
 });
 
@@ -146,7 +180,8 @@ export const updateProduct = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Product not found");
   }
-  Object.assign(product, req.body);
+  const safe = pickWritable(req.body);
+  Object.assign(product, safe);
   await product.save();
   res.json({ success: true, product });
 });

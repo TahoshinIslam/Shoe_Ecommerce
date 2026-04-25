@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { Provider } from "react-redux";
 import { BrowserRouter } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
-
+import { SettingsProvider } from "./contexts/SettingsContext.jsx";
 import App from "./App.jsx";
 import store from "./store/index.js";
 import ThemeProvider from "./contexts/ThemeProvider.jsx";
@@ -11,6 +11,7 @@ import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
+    <SettingsProvider>
     <Provider store={store}>
       <BrowserRouter
         future={{
@@ -20,6 +21,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
       >
         <ThemeProvider>
           <App />
+          
           <Toaster
             position="top-right"
             toastOptions={{
@@ -35,5 +37,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         </ThemeProvider>
       </BrowserRouter>
     </Provider>
+    </SettingsProvider>
   </React.StrictMode>
 );

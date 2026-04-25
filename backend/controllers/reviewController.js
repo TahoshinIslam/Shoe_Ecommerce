@@ -27,37 +27,43 @@ export const getProductReviews = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Create review
+// @desc    Create review — only if user has a DELIVERED order for this product
 // @route   POST /api/reviews/product/:productId
 // @access  Private
 export const createReview = asyncHandler(async (req, res) => {
   const { rating, title, comment, images = [] } = req.body;
   const productId = req.params.productId;
 
-  // Check if already reviewed
-  const existing = await Review.findOne({ user: req.user._id, product: productId });
-  if (existing) {
-    res.status(400);
-    throw new Error("You've already reviewed this product");
-  }
-
-  // Verified purchase check
-  const hasPurchased = await Order.exists({
+  // Hard block: must have an order with status "delivered" containing this product.
+  const hasDelivered = await Order.exists({
     user: req.user._id,
     "items.product": productId,
-    status: { $in: ["delivered", "shipped"] },
+    status: "delivered",
   });
+  if (!hasDelivered) {
+    res.status(403);
+    throw new Error("You can only review products from delivered orders");
+  }
 
-  const review = await Review.create({
-    user: req.user._id,
-    product: productId,
-    rating,
-    title,
-    comment,
-    images,
-    isVerifiedPurchase: !!hasPurchased,
-  });
-  res.status(201).json({ success: true, review });
+  try {
+    const review = await Review.create({
+      user: req.user._id,
+      product: productId,
+      rating,
+      title,
+      comment,
+      images,
+      isVerifiedPurchase: true, // guaranteed true now since we blocked above
+    });
+    res.status(201).json({ success: true, review });
+  } catch (err) {
+    // Unique index on {user, product} throws E11000 on duplicate
+    if (err.code === 11000) {
+      res.status(400);
+      throw new Error("You've already reviewed this product");
+    }
+    throw err;
+  }
 });
 
 // @desc    Update my review
@@ -91,7 +97,10 @@ export const deleteReview = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Review not found");
   }
-  if (review.user.toString() !== req.user._id.toString() && req.user.role !== "admin") {
+  if (
+    review.user.toString() !== req.user._id.toString() &&
+    req.user.role !== "admin"
+  ) {
     res.status(403);
     throw new Error("Not authorized");
   }

@@ -8,6 +8,7 @@ import {
   Users,
   Tag,
   Palette,
+  Settings,
   Menu,
   X,
   Home,
@@ -23,6 +24,7 @@ const NAV = [
   { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/coupons", label: "Coupons", icon: Tag },
   { to: "/admin/themes", label: "Themes", icon: Palette, highlight: true },
+  { to: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 export default function AdminLayout() {

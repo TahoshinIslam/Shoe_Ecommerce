@@ -26,7 +26,10 @@ const cartEndpoints = (b) => ({
 
 // ====== Wishlist ======
 const wishlistEndpoints = (b) => ({
-  getWishlist: b.query({ query: () => "/wishlist", providesTags: ["Wishlist"] }),
+  getWishlist: b.query({
+    query: () => "/wishlist",
+    providesTags: ["Wishlist"],
+  }),
   toggleWishlist: b.mutation({
     query: (productId) => ({ url: `/wishlist/${productId}`, method: "POST" }),
     invalidatesTags: ["Wishlist"],
@@ -39,6 +42,9 @@ const wishlistEndpoints = (b) => ({
 
 // ====== Orders ======
 const orderEndpoints = (b) => ({
+  previewOrder: b.mutation({
+    query: (body) => ({ url: "/orders/preview", method: "POST", body }),
+  }),
   createOrder: b.mutation({
     query: (body) => ({ url: "/orders", method: "POST", body }),
     invalidatesTags: ["Order", "Cart"],
@@ -89,7 +95,11 @@ const reviewEndpoints = (b) => ({
     ],
   }),
   updateReview: b.mutation({
-    query: ({ id, ...body }) => ({ url: `/reviews/${id}`, method: "PUT", body }),
+    query: ({ id, ...body }) => ({
+      url: `/reviews/${id}`,
+      method: "PUT",
+      body,
+    }),
     invalidatesTags: ["Review"],
   }),
   deleteReview: b.mutation({
@@ -113,7 +123,11 @@ const couponEndpoints = (b) => ({
     invalidatesTags: ["Coupon"],
   }),
   updateCoupon: b.mutation({
-    query: ({ id, ...body }) => ({ url: `/coupons/${id}`, method: "PUT", body }),
+    query: ({ id, ...body }) => ({
+      url: `/coupons/${id}`,
+      method: "PUT",
+      body,
+    }),
     invalidatesTags: ["Coupon"],
   }),
   deleteCoupon: b.mutation({
@@ -124,13 +138,20 @@ const couponEndpoints = (b) => ({
 
 // ====== Addresses ======
 const addressEndpoints = (b) => ({
-  getMyAddresses: b.query({ query: () => "/addresses", providesTags: ["Address"] }),
+  getMyAddresses: b.query({
+    query: () => "/addresses",
+    providesTags: ["Address"],
+  }),
   createAddress: b.mutation({
     query: (body) => ({ url: "/addresses", method: "POST", body }),
     invalidatesTags: ["Address"],
   }),
   updateAddress: b.mutation({
-    query: ({ id, ...body }) => ({ url: `/addresses/${id}`, method: "PUT", body }),
+    query: ({ id, ...body }) => ({
+      url: `/addresses/${id}`,
+      method: "PUT",
+      body,
+    }),
     invalidatesTags: ["Address"],
   }),
   deleteAddress: b.mutation({
@@ -142,16 +163,25 @@ const addressEndpoints = (b) => ({
 // ====== Payments ======
 const paymentEndpoints = (b) => ({
   stripeCheckout: b.mutation({
-    query: (orderId) => ({ url: `/payments/stripe/${orderId}`, method: "POST" }),
+    query: (orderId) => ({
+      url: `/payments/stripe/${orderId}`,
+      method: "POST",
+    }),
   }),
   bkashCreate: b.mutation({
-    query: (orderId) => ({ url: `/payments/bkash/create/${orderId}`, method: "POST" }),
+    query: (orderId) => ({
+      url: `/payments/bkash/create/${orderId}`,
+      method: "POST",
+    }),
   }),
   bkashExecute: b.mutation({
     query: (body) => ({ url: "/payments/bkash/execute", method: "POST", body }),
   }),
   nagadCreate: b.mutation({
-    query: (orderId) => ({ url: `/payments/nagad/create/${orderId}`, method: "POST" }),
+    query: (orderId) => ({
+      url: `/payments/nagad/create/${orderId}`,
+      method: "POST",
+    }),
   }),
   codCreate: b.mutation({
     query: (orderId) => ({ url: `/payments/cod/${orderId}`, method: "POST" }),
@@ -164,7 +194,10 @@ const paymentEndpoints = (b) => ({
 
 // ====== Analytics ======
 const analyticsEndpoints = (b) => ({
-  getOverview: b.query({ query: () => "/analytics/overview", providesTags: ["Analytics"] }),
+  getOverview: b.query({
+    query: () => "/analytics/overview",
+    providesTags: ["Analytics"],
+  }),
   getSalesSeries: b.query({
     query: (days = 30) => `/analytics/sales-series?days=${days}`,
     providesTags: ["Analytics"],
@@ -211,13 +244,20 @@ const uploadEndpoints = (b) => ({
 
 // ====== Categories / Brands ======
 const categoryBrandEndpoints = (b) => ({
-  getCategories: b.query({ query: () => "/categories", providesTags: ["Category"] }),
+  getCategories: b.query({
+    query: () => "/categories",
+    providesTags: ["Category"],
+  }),
   createCategory: b.mutation({
     query: (body) => ({ url: "/categories", method: "POST", body }),
     invalidatesTags: ["Category"],
   }),
   updateCategory: b.mutation({
-    query: ({ id, ...body }) => ({ url: `/categories/${id}`, method: "PUT", body }),
+    query: ({ id, ...body }) => ({
+      url: `/categories/${id}`,
+      method: "PUT",
+      body,
+    }),
     invalidatesTags: ["Category"],
   }),
   deleteCategory: b.mutation({
@@ -263,6 +303,7 @@ export const {
   useGetWishlistQuery,
   useToggleWishlistMutation,
   useClearWishlistMutation,
+  usePreviewOrderMutation,
   useCreateOrderMutation,
   useGetMyOrdersQuery,
   useGetOrderQuery,

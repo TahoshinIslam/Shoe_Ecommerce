@@ -32,6 +32,7 @@ import {
   toggleSearch,
   setMobileMenuOpen,
 } from "../../store/uiSlice.js";
+import CurrencySwitcher from "./CurrencySwitcher.jsx";
 
 const navLinks = [
   { to: "/", label: "Home" },
@@ -149,6 +150,7 @@ export default function Header() {
               <Search className="h-5 w-5" />
             </button>
 
+            <CurrencySwitcher />
             {theme?.features?.enableDarkMode !== false && (
               <button
                 onClick={toggleDark}

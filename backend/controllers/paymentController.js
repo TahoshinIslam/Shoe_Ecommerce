@@ -1,6 +1,7 @@
 import asyncHandler from "../middleware/asyncHandler.js";
 import Order from "../models/orderModel.js";
 import Payment from "../models/paymentModel.js";
+import logger from "../utils/logger.js";
 import {
   createCheckoutSession as stripeCreateSession,
   constructWebhookEvent,
@@ -17,7 +18,13 @@ import {
 } from "../services/nagadService.js";
 
 // Helper: upsert payment record
-const upsertPayment = async (orderId, userId, method, amount, currency = "USD") => {
+const upsertPayment = async (
+  orderId,
+  userId,
+  method,
+  amount,
+  currency = "USD",
+) => {
   let payment = await Payment.findOne({ order: orderId });
   if (!payment) {
     payment = await Payment.create({
@@ -68,26 +75,50 @@ export const stripeCreate = asyncHandler(async (req, res) => {
 
 // @desc    Stripe webhook (raw body) — server.js mounts this route before express.json
 // @route   POST /api/payments/stripe/webhook
-// @access  Public (signed by Stripe)
+// @access  Public (verified by Stripe signature)
 export const stripeWebhook = async (req, res) => {
   const sig = req.headers["stripe-signature"];
   let event;
   try {
     event = constructWebhookEvent(req.body, sig);
   } catch (err) {
-    console.error("Stripe webhook sig error:", err.message);
+    logger.error({ err }, "Stripe webhook signature error");
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    const orderId = session.metadata?.orderId || session.client_reference_id;
-    if (orderId) {
-      const order = await Order.findById(orderId);
-      if (order) {
-        order.status = "paid";
-        await order.save();
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      const orderId = session.metadata?.orderId || session.client_reference_id;
+      if (!orderId) {
+        logger.warn({ sessionId: session.id }, "Stripe webhook: no orderId");
+        return res.json({ received: true });
       }
+
+      const order = await Order.findById(orderId);
+      if (!order) {
+        logger.warn({ orderId }, "Stripe webhook: order not found");
+        return res.json({ received: true });
+      }
+
+      // Idempotency: Stripe retries webhooks. If already paid, return early.
+      if (order.status !== "pending") {
+        return res.json({ received: true, note: "already processed" });
+      }
+
+      // Sanity check: amount matches (guards against tampering of metadata)
+      const expectedCents = Math.round(order.total * 100);
+      if (session.amount_total !== expectedCents) {
+        logger.error(
+          { orderId, expected: expectedCents, got: session.amount_total },
+          "Stripe amount mismatch",
+        );
+        return res.json({ received: true, note: "amount mismatch" });
+      }
+
+      order.status = "paid";
+      await order.save();
+
       await Payment.findOneAndUpdate(
         { order: orderId },
         {
@@ -98,6 +129,9 @@ export const stripeWebhook = async (req, res) => {
         },
       );
     }
+  } catch (err) {
+    // Don't 500 to Stripe — it will retry. Log and acknowledge.
+    logger.error({ err }, "Stripe webhook processing error");
   }
 
   res.json({ received: true });
@@ -133,7 +167,6 @@ export const bkashCreate = asyncHandler(async (req, res) => {
     throw new Error(`bKash create failed: ${data.statusMessage || "unknown"}`);
   }
 
-  // Store paymentID in transactionId temporarily
   await Payment.findOneAndUpdate(
     { order: order._id },
     { transactionId: data.paymentID, gatewayResponse: data },
@@ -152,15 +185,36 @@ export const bkashExecute = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Order not found");
   }
+  if (order.user.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error("Not authorized");
+  }
+
+  // Idempotency: if already paid, don't re-execute
+  if (order.status !== "pending") {
+    return res.json({ success: true, order, note: "already processed" });
+  }
 
   let result = await bkashExecutePayment(paymentID);
-  // If execute times out / fails, try query as fallback
   if (result.statusCode !== "0000") {
     result = await bkashQueryPayment(paymentID);
   }
 
   const completed =
     result.statusCode === "0000" && result.transactionStatus === "Completed";
+
+  // Verify bKash-reported amount matches order total
+  const reportedAmount = Number(result.amount);
+  if (
+    completed &&
+    Number.isFinite(reportedAmount) &&
+    reportedAmount !== order.total
+  ) {
+    logger.error(
+      { orderId, expected: order.total, got: reportedAmount, gateway: "bkash" },
+      "Payment amount mismatch",
+    );
+  }
 
   await Payment.findOneAndUpdate(
     { order: order._id },
@@ -198,14 +252,15 @@ export const nagadCreate = asyncHandler(async (req, res) => {
 
   await upsertPayment(order._id, req.user._id, "nagad", order.total, "BDT");
 
-  const init = await nagadInitialize({ orderId: order._id.toString(), amount: order.total });
-  // You'll need to decrypt init.raw.sensitiveData with your private key to extract paymentReferenceId & challenge
-  // Nagad returns them encrypted with your public key — see Nagad docs for the decrypt step.
-  // For now this endpoint returns the init response so you can complete the flow on the frontend.
+  const init = await nagadInitialize({
+    orderId: order._id.toString(),
+    amount: order.total,
+  });
 
   res.json({
     success: true,
-    message: "Nagad initialized. Decrypt sensitiveData and call /api/payments/nagad/complete",
+    message:
+      "Nagad initialized. Decrypt sensitiveData and call /api/payments/nagad/complete",
     init: init.raw,
     challenge: init.challenge,
     dateTime: init.dateTime,
@@ -221,6 +276,10 @@ export const nagadComplete = asyncHandler(async (req, res) => {
   if (!order) {
     res.status(404);
     throw new Error("Order not found");
+  }
+  if (order.user.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error("Not authorized");
   }
   const data = await nagadCompleteCheckout({
     paymentReferenceId,
@@ -238,13 +297,36 @@ export const nagadComplete = asyncHandler(async (req, res) => {
 export const nagadVerifyPayment = asyncHandler(async (req, res) => {
   const { paymentRefId } = req.params;
   const { orderId } = req.query;
-  const result = await nagadVerify(paymentRefId);
-
-  const completed = result?.status === "Success";
   const order = await Order.findById(orderId);
   if (!order) {
     res.status(404);
     throw new Error("Order not found");
+  }
+  if (order.user.toString() !== req.user._id.toString()) {
+    res.status(403);
+    throw new Error("Not authorized");
+  }
+
+  // Idempotency
+  if (order.status !== "pending") {
+    return res.json({ success: true, order, note: "already processed" });
+  }
+
+  const result = await nagadVerify(paymentRefId);
+  const completed = result?.status === "Success";
+
+  // Verify amount if Nagad returns it
+  const reportedAmount = Number(result?.amount);
+  if (
+    completed &&
+    Number.isFinite(reportedAmount) &&
+    reportedAmount !== order.total
+  ) {
+    logger.error(
+      { orderId, expected: order.total, got: reportedAmount, gateway: "nagad" },
+      "Payment amount mismatch",
+    );
+    return res.status(400).json({ success: false, message: "Amount mismatch" });
   }
 
   await Payment.findOneAndUpdate(
@@ -295,7 +377,10 @@ export const getPaymentByOrder = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Payment not found");
   }
-  if (payment.user.toString() !== req.user._id.toString() && req.user.role !== "admin") {
+  if (
+    payment.user.toString() !== req.user._id.toString() &&
+    req.user.role !== "admin"
+  ) {
     res.status(403);
     throw new Error("Not authorized");
   }

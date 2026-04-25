@@ -4,7 +4,7 @@ import Product from "../models/productModel.js";
 
 // Helper: find size-stock entry
 const findSizeStock = (product, size) =>
-  product.sizes.find((s) => s.size === size);
+  product?.sizes?.find((s) => s.size === size);
 
 // @desc    Get current user's cart
 // @route   GET /api/cart
@@ -29,6 +29,10 @@ export const addToCart = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Product not found");
   }
+  if (!Array.isArray(product.sizes)) {
+    res.status(400);
+    throw new Error("Product has no size information");
+  }
 
   const sizeStock = findSizeStock(product, size);
   if (!sizeStock) {
@@ -44,7 +48,7 @@ export const addToCart = asyncHandler(async (req, res) => {
   if (!cart) cart = await Cart.create({ user: req.user._id, items: [] });
 
   const idx = cart.items.findIndex(
-    (i) => i.product.toString() === productId && i.size === size,
+    (i) => i.product?.toString() === productId && i.size === size,
   );
 
   if (idx >= 0) {
@@ -63,7 +67,10 @@ export const addToCart = asyncHandler(async (req, res) => {
   }
 
   await cart.save();
-  await cart.populate("items.product", "name images basePrice discountPrice slug");
+  await cart.populate(
+    "items.product",
+    "name images basePrice discountPrice slug",
+  );
   res.json({ success: true, cart });
 });
 
@@ -79,7 +86,7 @@ export const updateCartItem = asyncHandler(async (req, res) => {
   }
 
   const idx = cart.items.findIndex(
-    (i) => i.product.toString() === productId && i.size === size,
+    (i) => i.product?.toString() === productId && i.size === size,
   );
   if (idx < 0) {
     res.status(404);
@@ -90,6 +97,14 @@ export const updateCartItem = asyncHandler(async (req, res) => {
     cart.items.splice(idx, 1);
   } else {
     const product = await Product.findById(productId);
+    if (!product) {
+      res.status(404);
+      throw new Error("Product not found");
+    }
+    if (!Array.isArray(product.sizes)) {
+      res.status(400);
+      throw new Error("Product has no size information");
+    }
     const sizeStock = findSizeStock(product, size);
     if (!sizeStock || quantity > sizeStock.stock) {
       res.status(400);
@@ -99,7 +114,10 @@ export const updateCartItem = asyncHandler(async (req, res) => {
   }
 
   await cart.save();
-  await cart.populate("items.product", "name images basePrice discountPrice slug");
+  await cart.populate(
+    "items.product",
+    "name images basePrice discountPrice slug",
+  );
   res.json({ success: true, cart });
 });
 
@@ -114,7 +132,7 @@ export const removeFromCart = asyncHandler(async (req, res) => {
     throw new Error("Cart not found");
   }
   cart.items = cart.items.filter(
-    (i) => !(i.product.toString() === productId && i.size === size),
+    (i) => !(i.product?.toString() === productId && i.size === size),
   );
   await cart.save();
   res.json({ success: true, cart });

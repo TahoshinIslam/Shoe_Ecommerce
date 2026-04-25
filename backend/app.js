@@ -1,20 +1,35 @@
 import express from "express";
-import dotenv from "dotenv";
-dotenv.config();
-
+import * as Sentry from "@sentry/node";
 import cors from "cors";
 import helmet from "helmet";
-import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import mongoSanitize from "express-mongo-sanitize";
 import hpp from "hpp";
-import xss from "xss-clean";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import connectDB from "./config/db.js";
-import { apiLimiter } from "./middleware/rateLimiter.js";
 import { notFound, errorHandler } from "./middleware/errorMiddleware.js";
+import requestLogger from "./middleware/requestLogger.js";
+import { apiLimiter } from "./middleware/rateLimiter.js";
+import {
+  csrfProtection,
+  csrfTokenHandler,
+} from "./middleware/csrfMiddleware.js";
+
+// --- eager model imports so mongoose has them all registered ---
+import "./models/userModel.js";
+import "./models/brandModel.js";
+import "./models/categoryModel.js";
+import "./models/productModel.js";
+import "./models/orderModel.js";
+import "./models/cartModel.js";
+import "./models/wishlistModel.js";
+import "./models/reviewModel.js";
+import "./models/addressModel.js";
+import "./models/couponModel.js";
+import "./models/paymentModel.js";
+import "./models/themeModel.js";
+import "./models/settingsModel.js";
 
 // --- route imports ---
 import userRoutes from "./routes/userRoutes.js";
@@ -31,70 +46,68 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import themeRoutes from "./routes/themeRoutes.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
+import settingsRoutes from "./routes/settingsRoutes.js";
 
-// Stripe webhook uses raw body — import raw handler
 import { stripeWebhook } from "./controllers/paymentController.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const port = process.env.PORT || 5001;
 
-// --- DB ---
-connectDB();
-
-// --- trust proxy (needed for rate-limit behind Nginx/Heroku/Vercel) ---
 app.set("trust proxy", 1);
 
-// --- Security headers ---
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: false,
   }),
 );
 
-// --- CORS (allowlist for cookie-based auth) ---
-const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:3000")
+const allowedOrigins = (
+  process.env.CLIENT_URL || "http://localhost:3000,http://localhost:3001"
+)
   .split(",")
   .map((o) => o.trim());
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      if (/^http:\/\/localhost:\d+$/.test(origin)) return cb(null, true);
       return cb(new Error("CORS blocked for origin: " + origin));
     },
     credentials: true,
   }),
 );
 
-// --- Stripe webhook route MUST come before express.json() (raw body required) ---
+// Stripe webhook (raw body) — MUST come before express.json()
 app.post(
   "/api/payments/stripe/webhook",
   express.raw({ type: "application/json" }),
   stripeWebhook,
 );
 
-// --- Body parsers ---
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-// --- Sanitize inputs ---
-app.use(mongoSanitize());
-app.use(xss());
+app.use(mongoSanitize({ replaceWith: "_" }));
 app.use(hpp());
 
-// --- Logging ---
-if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
+// Don't log requests during tests (too noisy)
+if (process.env.NODE_ENV !== "test") {
+  app.use(requestLogger);
+}
 
-// --- Global rate limiter ---
 app.use("/api", apiLimiter);
 
-// --- Static uploads (served from /uploads) ---
+// CSRF protection — must come AFTER cookieParser and express.json
+app.use(csrfProtection);
+app.get("/api/csrf-token", csrfTokenHandler);
+
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
-// --- Health check ---
 app.get("/api/health", (req, res) =>
   res.json({ status: "ok", uptime: process.uptime(), ts: Date.now() }),
 );
@@ -114,13 +127,13 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/theme", themeRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/upload", uploadRoutes);
-
-// --- 404 + error handler ---
+app.use("/api/settings", settingsRoutes);
 app.use(notFound);
+
+if (process.env.SENTRY_DSN && process.env.NODE_ENV !== "test") {
+  Sentry.setupExpressErrorHandler(app);
+}
+
 app.use(errorHandler);
 
-app.listen(port, () =>
-  console.log(
-    `🚀 Server running in ${process.env.NODE_ENV || "development"} mode on port ${port}`,
-  ),
-);
+export default app;

@@ -14,7 +14,6 @@ import {
   Loader2,
   Smartphone,
   Banknote,
-  AlertCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -31,6 +30,7 @@ import {
   useCreateAddressMutation,
   useValidateCouponMutation,
   useCreateOrderMutation,
+  usePreviewOrderMutation,
   useStripeCheckoutMutation,
   useBkashCreateMutation,
   useNagadCreateMutation,
@@ -38,6 +38,7 @@ import {
 } from "../store/shopApi.js";
 import { selectCurrentUser } from "../store/authSlice.js";
 import { formatCurrency, cn } from "../lib/utils.js";
+import { useSettings } from "../contexts/SettingsContext.jsx";
 
 const addressSchema = z.object({
   fullName: z.string().min(2, "Required"),
@@ -51,79 +52,48 @@ const addressSchema = z.object({
 });
 
 const PAYMENT_METHODS = [
-  {
-    id: "stripe",
-    label: "Credit/Debit Card",
-    desc: "Secure checkout via Stripe",
-    icon: CreditCard,
-    currency: "USD",
-  },
-  {
-    id: "bkash",
-    label: "bKash",
-    desc: "Pay with bKash mobile banking",
-    icon: Smartphone,
-    currency: "BDT",
-    color: "text-pink-600",
-  },
-  {
-    id: "nagad",
-    label: "Nagad",
-    desc: "Pay with Nagad mobile banking",
-    icon: Smartphone,
-    currency: "BDT",
-    color: "text-orange-600",
-  },
-  {
-    id: "cod",
-    label: "Cash on Delivery",
-    desc: "Pay when your order arrives",
-    icon: Banknote,
-  },
+  { id: "stripe", label: "Credit/Debit Card", desc: "Secure checkout via Stripe", icon: CreditCard },
+  { id: "bkash", label: "bKash", desc: "Pay with your bKash wallet", icon: Smartphone },
+  { id: "nagad", label: "Nagad", desc: "Pay with Nagad", icon: Smartphone },
+  { id: "cod", label: "Cash on Delivery", desc: "Pay when your order arrives", icon: Banknote },
 ];
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const user = useSelector(selectCurrentUser);
+  const settings = useSettings();
 
   const { data: cartData, isLoading: cartLoading } = useGetCartQuery();
-  const { data: addrData, isLoading: addrLoading } = useGetMyAddressesQuery();
+  const { data: addrData } = useGetMyAddressesQuery();
+  const [createAddress] = useCreateAddressMutation();
+  const [validateCoupon] = useValidateCouponMutation();
+  const [createOrder, { isLoading: placing }] = useCreateOrderMutation();
+  const [previewOrder] = usePreviewOrderMutation();
+  const [stripeCheckout] = useStripeCheckoutMutation();
+  const [bkashCreate] = useBkashCreateMutation();
+  const [nagadCreate] = useNagadCreateMutation();
+  const [codCreate] = useCodCreateMutation();
 
   const [selectedAddressId, setSelectedAddressId] = useState(null);
   const [addingAddress, setAddingAddress] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState("stripe");
+  const [paymentMethod, setPaymentMethod] = useState("cod");
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [notes, setNotes] = useState("");
 
-  const [createAddress, { isLoading: addrCreating }] = useCreateAddressMutation();
-  const [validateCoupon, { isLoading: couponValidating }] = useValidateCouponMutation();
-  const [createOrder, { isLoading: orderCreating }] = useCreateOrderMutation();
-  const [stripeCheckout, { isLoading: stripeCreating }] = useStripeCheckoutMutation();
-  const [bkashCreate, { isLoading: bkashCreating }] = useBkashCreateMutation();
-  const [nagadCreate, { isLoading: nagadCreating }] = useNagadCreateMutation();
-  const [codCreate, { isLoading: codCreating }] = useCodCreateMutation();
+  const [serverTotals, setServerTotals] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
-  const placing =
-    orderCreating ||
-    stripeCreating ||
-    bkashCreating ||
-    nagadCreating ||
-    codCreating;
+  const items = cartData?.cart?.items ?? [];
 
-  // Auto-select default/first address
   useEffect(() => {
-    if (!selectedAddressId && addrData?.addresses?.length > 0) {
+    if (!selectedAddressId && addrData?.addresses?.length) {
       const def = addrData.addresses.find((a) => a.isDefault) || addrData.addresses[0];
       setSelectedAddressId(def._id);
     }
   }, [addrData, selectedAddressId]);
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm({
+  const { register, handleSubmit, reset, formState: { errors } } = useForm({
     resolver: zodResolver(addressSchema),
     defaultValues: {
       fullName: user?.name || "",
@@ -133,9 +103,56 @@ export default function CheckoutPage() {
     },
   });
 
-  // Totals (mirrors backend calc so user sees accurate preview)
-  const items = cartData?.cart?.items ?? [];
-  const totals = useMemo(() => {
+  const selectedAddress = useMemo(
+    () => addrData?.addresses?.find((a) => a._id === selectedAddressId),
+    [addrData, selectedAddressId],
+  );
+
+  // Server-side preview, debounced to avoid hammering on every keystroke
+  useEffect(() => {
+    if (!items.length || !selectedAddress?.country) {
+      setServerTotals(null);
+      return;
+    }
+
+    let cancelled = false;
+    setPreviewLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await previewOrder({
+          items: items.map((i) => ({
+            product: i.product._id,
+            size: i.size,
+            quantity: i.quantity,
+          })),
+          shippingAddress: {
+            fullName: selectedAddress.fullName,
+            phone: selectedAddress.phone,
+            street: selectedAddress.street,
+            city: selectedAddress.city,
+            state: selectedAddress.state || "",
+            postalCode: selectedAddress.postalCode,
+            country: selectedAddress.country,
+          },
+          couponCode: appliedCoupon?.coupon?.code,
+        }).unwrap();
+        if (!cancelled) setServerTotals(res.preview);
+      } catch (e) {
+        if (!cancelled) setServerTotals(null);
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [items, selectedAddress, appliedCoupon, previewOrder]);
+
+  // Local fallback math used only before first preview response arrives
+  const fallbackTotals = useMemo(() => {
     let subtotal = 0;
     for (const it of items) {
       const p = it.product;
@@ -143,21 +160,20 @@ export default function CheckoutPage() {
       const price = p.discountPrice ?? p.basePrice;
       subtotal += price * it.quantity;
     }
-    const shippingCost = subtotal > 200 || subtotal === 0 ? 0 : 10;
-    let discount = 0;
-    if (appliedCoupon) {
-      if (appliedCoupon.coupon.discountType === "percentage") {
-        discount = Math.round((subtotal * appliedCoupon.coupon.discountValue) / 100);
-      } else {
-        discount = appliedCoupon.coupon.discountValue;
-      }
-      if (appliedCoupon.coupon.maxDiscount) {
-        discount = Math.min(discount, appliedCoupon.coupon.maxDiscount);
-      }
-    }
-    const total = Math.max(0, subtotal + shippingCost - discount);
-    return { subtotal, shippingCost, discount, total };
-  }, [items, appliedCoupon]);
+    return {
+      subtotal,
+      tax: 0,
+      taxLabel: "",
+      taxInclusive: false,
+      shippingCost: 0,
+      discount: 0,
+      total: subtotal,
+      currency: "USD",
+    };
+  }, [items]);
+
+  const totals = serverTotals || fallbackTotals;
+  const displayCurrency = totals.currency;
 
   const handleNewAddress = async (data) => {
     try {
@@ -179,7 +195,7 @@ export default function CheckoutPage() {
         subtotal: totals.subtotal,
       }).unwrap();
       setAppliedCoupon(res);
-      toast.success(`Coupon applied: -${formatCurrency(res.discount)}`);
+      toast.success(`Coupon applied: -${formatCurrency(res.discount, displayCurrency)}`);
     } catch (e) {
       setAppliedCoupon(null);
       toast.error(e?.data?.message || "Invalid coupon");
@@ -195,7 +211,6 @@ export default function CheckoutPage() {
       toast.error("Your cart is empty");
       return;
     }
-
     const address = addrData.addresses.find((a) => a._id === selectedAddressId);
     if (!address) {
       toast.error("Invalid address");
@@ -203,7 +218,6 @@ export default function CheckoutPage() {
     }
 
     try {
-      // 1. Create order on backend (server re-verifies totals/stock)
       const orderRes = await createOrder({
         items: items.map((i) => ({
           product: i.product._id,
@@ -220,260 +234,209 @@ export default function CheckoutPage() {
           country: address.country,
         },
         couponCode: appliedCoupon?.coupon?.code,
+        notes,
       }).unwrap();
 
       const orderId = orderRes.order._id;
 
-      // 2. Initiate payment for selected method
       if (paymentMethod === "stripe") {
         const res = await stripeCheckout(orderId).unwrap();
-        // Redirect to Stripe Checkout
         window.location.href = res.url;
-      } else if (paymentMethod === "bkash") {
+        return;
+      }
+      if (paymentMethod === "bkash") {
         const res = await bkashCreate(orderId).unwrap();
-        // Save paymentID to session storage so the callback page can use it
-        sessionStorage.setItem(
-          "bkash:pending",
-          JSON.stringify({ paymentID: res.paymentID, orderId })
-        );
         window.location.href = res.url;
-      } else if (paymentMethod === "nagad") {
-        // Nagad requires decrypting the init response with your private key
-        // (a backend step). For now, we just show a friendly message.
-        await nagadCreate(orderId).unwrap();
-        toast.success("Nagad payment initialized. Complete the flow in your Nagad app.");
+        return;
+      }
+      if (paymentMethod === "nagad") {
+        toast.success("Order placed. Continue Nagad payment.");
         navigate(`/order/${orderId}`);
-      } else if (paymentMethod === "cod") {
+        return;
+      }
+      if (paymentMethod === "cod") {
         await codCreate(orderId).unwrap();
         toast.success("Order placed! Pay in cash on delivery.");
         navigate(`/order/${orderId}`);
+        return;
       }
     } catch (e) {
-      toast.error(e?.data?.message || "Could not place order");
+      toast.error(e?.data?.message || "Failed to place order");
     }
   };
 
   if (cartLoading) {
     return (
-      <div className="container-x py-16 text-center">
-        <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
   }
 
-  if (items.length === 0) {
+  if (!items.length) {
     return (
-      <div className="container-x py-10">
-        <EmptyState
-          icon={ShoppingBag}
-          title="Your cart is empty"
-          message="Add something before checking out."
-          action={<Button onClick={() => navigate("/shop")}>Shop shoes</Button>}
-        />
-      </div>
+      <EmptyState
+        icon={ShoppingBag}
+        title="Your cart is empty"
+        description="Add something to your cart to check out."
+        action={<Button onClick={() => navigate("/shop")}>Continue shopping</Button>}
+      />
     );
   }
 
   return (
-    <div className="container-x py-10">
-      <h1 className="mb-8 font-heading text-3xl font-black">Checkout</h1>
+    <div className="container mx-auto max-w-6xl px-4 py-8">
+      <h1 className="mb-6 font-heading text-3xl font-black">Checkout</h1>
 
-      <div className="grid gap-8 lg:grid-cols-[1fr_400px]">
-        {/* LEFT: form sections */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
+        {/* Left: forms */}
         <div className="space-y-6">
-          {/* Address */}
           <Section icon={MapPin} title="Shipping address">
-            {addrLoading ? (
-              <p className="text-sm text-muted-foreground">Loading...</p>
-            ) : (
-              <>
-                {addrData?.addresses?.length > 0 && !addingAddress && (
-                  <div className="space-y-2">
-                    {addrData.addresses.map((a) => (
-                      <AddressCard
-                        key={a._id}
-                        address={a}
-                        selected={selectedAddressId === a._id}
-                        onSelect={() => setSelectedAddressId(a._id)}
-                      />
-                    ))}
-                    <Button
-                      variant="outline"
-                      onClick={() => setAddingAddress(true)}
-                      className="w-full"
-                    >
-                      + Add new address
-                    </Button>
-                  </div>
-                )}
-
-                {(addingAddress || addrData?.addresses?.length === 0) && (
-                  <form
-                    onSubmit={handleSubmit(handleNewAddress)}
-                    className="space-y-3"
+            {addrData?.addresses?.length ? (
+              <div className="space-y-2">
+                {addrData.addresses.map((a) => (
+                  <label
+                    key={a._id}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-all",
+                      selectedAddressId === a._id ? "border-accent bg-accent/5" : "border-border hover:bg-muted/50",
+                    )}
                   >
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Input
-                        label="Full name"
-                        error={errors.fullName?.message}
-                        {...register("fullName")}
-                      />
-                      <Input
-                        label="Phone"
-                        error={errors.phone?.message}
-                        {...register("phone")}
-                      />
-                    </div>
-                    <Input
-                      label="Street address"
-                      error={errors.street?.message}
-                      {...register("street")}
+                    <input
+                      type="radio"
+                      name="address"
+                      checked={selectedAddressId === a._id}
+                      onChange={() => setSelectedAddressId(a._id)}
+                      className="mt-1"
                     />
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <Input
-                        label="City"
-                        error={errors.city?.message}
-                        {...register("city")}
-                      />
-                      <Input label="State / Division" {...register("state")} />
-                      <Input
-                        label="Postal code"
-                        error={errors.postalCode?.message}
-                        {...register("postalCode")}
-                      />
+                    <div className="flex-1 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{a.fullName}</span>
+                        {a.isDefault && <Badge variant="default">Default</Badge>}
+                        <Badge variant="outline" className="capitalize">{a.label}</Badge>
+                      </div>
+                      <p className="mt-1 text-muted-foreground">{a.street}, {a.city}, {a.postalCode}, {a.country}</p>
+                      <p className="text-muted-foreground">{a.phone}</p>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Input
-                        label="Country"
-                        error={errors.country?.message}
-                        {...register("country")}
-                      />
-                      <Select label="Label" {...register("label")}>
-                        <option value="home">Home</option>
-                        <option value="work">Work</option>
-                        <option value="other">Other</option>
-                      </Select>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="submit" loading={addrCreating}>
-                        Save address
-                      </Button>
-                      {addrData?.addresses?.length > 0 && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setAddingAddress(false)}
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                    </div>
-                  </form>
-                )}
-              </>
-            )}
-          </Section>
-
-          {/* Payment */}
-          <Section icon={CreditCard} title="Payment method">
-            <div className="space-y-2">
-              {PAYMENT_METHODS.map((m) => (
-                <PaymentOption
-                  key={m.id}
-                  method={m}
-                  selected={paymentMethod === m.id}
-                  onSelect={() => setPaymentMethod(m.id)}
-                />
-              ))}
-            </div>
-            {(paymentMethod === "bkash" || paymentMethod === "nagad") && (
-              <div className="mt-3 flex gap-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                <p>
-                  Amount will be charged in BDT. Exchange rate applies if your cart is in a different currency.
-                </p>
-              </div>
-            )}
-          </Section>
-
-          {/* Coupon */}
-          <Section icon={Tag} title="Coupon code">
-            {appliedCoupon ? (
-              <div className="flex items-center justify-between rounded-md border border-success/30 bg-success/10 p-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <Check className="h-4 w-4 text-success" />
-                  <span className="font-semibold">{appliedCoupon.coupon.code}</span>
-                  <span className="text-muted-foreground">
-                    -{formatCurrency(appliedCoupon.discount)}
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    setAppliedCoupon(null);
-                    setCouponCode("");
-                  }}
-                  className="text-xs text-danger hover:underline"
-                >
-                  Remove
-                </button>
+                  </label>
+                ))}
               </div>
             ) : (
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Enter code (try WELCOME10)"
-                  value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                  className="flex-1"
-                />
-                <Button
-                  variant="outline"
-                  onClick={handleApplyCoupon}
-                  loading={couponValidating}
-                >
-                  Apply
-                </Button>
+              <p className="text-sm text-muted-foreground">No saved addresses.</p>
+            )}
+
+            {!addingAddress ? (
+              <Button variant="outline" onClick={() => setAddingAddress(true)} className="mt-3">
+                + Add new address
+              </Button>
+            ) : (
+              <form onSubmit={handleSubmit(handleNewAddress)} className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Input label="Full name" {...register("fullName")} error={errors.fullName?.message} />
+                <Input label="Phone" {...register("phone")} error={errors.phone?.message} />
+                <Input label="Street" className="md:col-span-2" {...register("street")} error={errors.street?.message} />
+                <Input label="City" {...register("city")} error={errors.city?.message} />
+                <Input label="State" {...register("state")} />
+                <Input label="Postal code" {...register("postalCode")} error={errors.postalCode?.message} />
+                <Input label="Country" {...register("country")} error={errors.country?.message} />
+                <div className="md:col-span-2 flex gap-2">
+                  <Button type="submit">Save</Button>
+                  <Button variant="outline" type="button" onClick={() => { setAddingAddress(false); reset(); }}>
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            )}
+          </Section>
+
+          <Section icon={CreditCard} title="Payment method">
+            <div className="grid gap-2 md:grid-cols-2">
+              {PAYMENT_METHODS.map((m) => {
+                const Icon = m.icon;
+                return (
+                  <label
+                    key={m.id}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-all",
+                      paymentMethod === m.id ? "border-accent bg-accent/5" : "border-border hover:bg-muted/50",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="payment"
+                      checked={paymentMethod === m.id}
+                      onChange={() => setPaymentMethod(m.id)}
+                      className="mt-1"
+                    />
+                    <Icon className="h-4 w-4 mt-0.5 shrink-0" />
+                    <div className="flex-1 text-sm">
+                      <p className="font-semibold">{m.label}</p>
+                      <p className="text-xs text-muted-foreground">{m.desc}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </Section>
+
+          <Section icon={Tag} title="Promo code">
+            <div className="flex gap-2">
+              <Input
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                placeholder="Enter code"
+              />
+              <Button onClick={handleApplyCoupon} disabled={!couponCode.trim()}>
+                Apply
+              </Button>
+            </div>
+            {appliedCoupon && (
+              <div className="mt-3 flex items-center gap-2 text-sm text-success">
+                <Check className="h-4 w-4" />
+                <span>Applied <strong>{appliedCoupon.coupon.code}</strong></span>
               </div>
             )}
+          </Section>
+
+          <Section icon={ShoppingBag} title="Order notes (optional)">
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Special delivery instructions…"
+              rows={3}
+            />
           </Section>
         </div>
 
-        {/* RIGHT: order summary (sticky) */}
+        {/* Right: summary */}
         <motion.aside
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           className="lg:sticky lg:top-24 lg:self-start"
         >
-          <div className="rounded-lg border border-border bg-muted/20 p-5">
-            <h2 className="mb-4 font-heading text-lg font-bold">Order summary</h2>
+          <div className="rounded-xl border border-border bg-card p-5 shadow-soft">
+            <h2 className="mb-4 font-heading text-xl font-bold">Order summary</h2>
 
-            <ul className="space-y-3">
+            <ul className="divide-y divide-border">
               {items.map((it) => {
                 const p = it.product;
                 if (!p) return null;
-                const price = p.discountPrice ?? p.basePrice;
+                const usdPrice = p.discountPrice ?? p.basePrice;
+                const lineTotalUsd = usdPrice * it.quantity;
                 return (
-                  <li key={`${p._id}-${it.size}`} className="flex gap-3">
-                    <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-md bg-background">
+                  <li key={`${p._id}-${it.size}`} className="py-3">
+                    <div className="flex gap-3">
                       <img
-                        src={p.images?.[0]}
+                        src={p.images?.[0] || "/images/placeholder.png"}
                         alt={p.name}
-                        className="h-full w-full object-cover"
+                        className="h-14 w-14 rounded-md object-cover"
                       />
-                      <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-foreground px-1 text-[10px] font-bold text-background">
-                        {it.quantity}
-                      </span>
-                    </div>
-                    <div className="flex flex-1 flex-col justify-between">
-                      <div>
-                        <p className="line-clamp-1 text-sm font-semibold">
-                          {p.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Size {it.size}
-                        </p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">{p.name}</p>
+                        <p className="text-xs text-muted-foreground">Size {it.size} · Qty {it.quantity}</p>
                       </div>
                       <p className="text-sm font-bold">
-                        {formatCurrency(price * it.quantity)}
+                        {/* Use settings.formatPrice — converts USD → active currency consistently */}
+                        {settings.formatPrice(lineTotalUsd)}
                       </p>
                     </div>
                   </li>
@@ -482,39 +445,54 @@ export default function CheckoutPage() {
             </ul>
 
             <div className="mt-5 space-y-2 border-t border-border pt-4 text-sm">
-              <Row label="Subtotal" value={formatCurrency(totals.subtotal)} />
               <Row
-                label="Shipping"
+                label="Subtotal"
+                value={formatCurrency(totals.subtotal, displayCurrency)}
+              />
+              <Row
+                label={previewLoading ? "Shipping…" : "Shipping"}
                 value={
                   totals.shippingCost === 0 ? (
                     <span className="text-success font-semibold">Free</span>
                   ) : (
-                    formatCurrency(totals.shippingCost)
+                    formatCurrency(totals.shippingCost, displayCurrency)
                   )
                 }
               />
+              {totals.tax > 0 && !totals.taxInclusive && (
+                <Row
+                  label={totals.taxLabel || "Tax"}
+                  value={formatCurrency(totals.tax, displayCurrency)}
+                />
+              )}
               {totals.discount > 0 && (
                 <Row
-                  label={`Discount`}
-                  value={`-${formatCurrency(totals.discount)}`}
+                  label="Discount"
+                  value={`-${formatCurrency(totals.discount, displayCurrency)}`}
                   valueClass="text-success"
                 />
               )}
               <Row
                 label="Total"
-                value={formatCurrency(totals.total)}
+                value={formatCurrency(totals.total, displayCurrency)}
                 className="border-t border-border pt-3 text-base font-bold"
               />
+              {totals.tax > 0 && totals.taxInclusive && (
+                <p className="pt-1 text-xs text-muted-foreground">
+                  Includes {totals.taxLabel.replace(/\s*\(incl\.\)/i, "")} of{" "}
+                  {formatCurrency(totals.tax, displayCurrency)}
+                </p>
+              )}
             </div>
 
             <Button
               onClick={handlePlaceOrder}
               loading={placing}
-              disabled={!selectedAddressId || items.length === 0}
+              disabled={!selectedAddressId || items.length === 0 || previewLoading}
               size="lg"
               className="mt-5 w-full"
             >
-              Place order — {formatCurrency(totals.total)}
+              Place order — {formatCurrency(totals.total, displayCurrency)}
             </Button>
             <p className="mt-3 text-center text-xs text-muted-foreground">
               By placing your order you agree to our Terms.
@@ -528,83 +506,13 @@ export default function CheckoutPage() {
 
 function Section({ icon: Icon, title, children }) {
   return (
-    <div className="rounded-lg border border-border bg-background p-5">
+    <div className="rounded-xl border border-border bg-card p-5 shadow-soft">
       <div className="mb-4 flex items-center gap-2">
-        <Icon className="h-4 w-4 text-accent" />
+        <Icon className="h-5 w-5 text-accent" />
         <h2 className="font-heading text-lg font-bold">{title}</h2>
       </div>
       {children}
     </div>
-  );
-}
-
-function AddressCard({ address, selected, onSelect }) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        "w-full rounded-md border p-3 text-left transition-all",
-        selected
-          ? "border-accent bg-accent/5 ring-1 ring-accent"
-          : "border-border hover:border-foreground/40"
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="font-semibold text-sm flex items-center gap-2">
-            {address.fullName}
-            {address.isDefault && <Badge variant="accent">Default</Badge>}
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {address.street}, {address.city}
-            {address.state && `, ${address.state}`} {address.postalCode}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {address.country} · {address.phone}
-          </p>
-        </div>
-        {selected && (
-          <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
-            <Check className="h-3 w-3" />
-          </div>
-        )}
-      </div>
-    </button>
-  );
-}
-
-function PaymentOption({ method, selected, onSelect }) {
-  const Icon = method.icon;
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        "flex w-full items-center gap-3 rounded-md border p-3 text-left transition-all",
-        selected
-          ? "border-accent bg-accent/5 ring-1 ring-accent"
-          : "border-border hover:border-foreground/40"
-      )}
-    >
-      <div
-        className={cn(
-          "flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-muted",
-          method.color
-        )}
-      >
-        <Icon className="h-5 w-5" />
-      </div>
-      <div className="flex-1">
-        <p className="text-sm font-semibold">{method.label}</p>
-        <p className="text-xs text-muted-foreground">{method.desc}</p>
-      </div>
-      {selected && (
-        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-accent-foreground">
-          <Check className="h-3 w-3" />
-        </div>
-      )}
-    </button>
   );
 }
 

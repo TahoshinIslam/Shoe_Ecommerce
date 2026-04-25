@@ -1,8 +1,28 @@
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import asyncHandler from "../middleware/asyncHandler.js";
 import User from "../models/userModel.js";
 import generateToken from "../utils/generateToken.js";
-import { sendEmail, buildVerificationEmail, buildPasswordResetEmail } from "../utils/sendEmail.js";
+import logger from "../utils/logger.js";
+import {
+  sendEmail,
+  buildVerificationEmail,
+  buildPasswordResetEmail,
+} from "../utils/sendEmail.js";
+
+// Dummy bcrypt hash used to equalize login timing on non-existent users.
+// Generated once at startup from a random string — the actual value doesn't matter.
+const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString("hex"), 12);
+
+// Clear auth cookie (used on logout and on password reset to kill all sessions).
+const clearAuthCookie = (res) => {
+  res.cookie("jwt", "", {
+    httpOnly: true,
+    expires: new Date(0),
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
+};
 
 // @desc    Register new user
 // @route   POST /api/users/register
@@ -18,9 +38,11 @@ export const registerUser = asyncHandler(async (req, res) => {
 
   const user = await User.create({ name, email, password });
 
-  // email verification token (stored hashed)
   const rawToken = crypto.randomBytes(32).toString("hex");
-  user.verificationToken = crypto.createHash("sha256").update(rawToken).digest("hex");
+  user.verificationToken = crypto
+    .createHash("sha256")
+    .update(rawToken)
+    .digest("hex");
   await user.save({ validateBeforeSave: false });
 
   const verifyUrl = `${process.env.CLIENT_URL}/verify-email/${rawToken}`;
@@ -28,7 +50,10 @@ export const registerUser = asyncHandler(async (req, res) => {
     const tpl = buildVerificationEmail(user.name, verifyUrl);
     await sendEmail({ to: user.email, ...tpl });
   } catch (err) {
-    console.warn("⚠️  Verification email not sent:", err.message);
+    logger.warn(
+      { err, userId: user._id.toString() },
+      "Verification email not sent",
+    );
   }
 
   generateToken(res, user._id);
@@ -49,8 +74,13 @@ export const registerUser = asyncHandler(async (req, res) => {
 // @route   GET /api/users/verify-email/:token
 // @access  Public
 export const verifyEmail = asyncHandler(async (req, res) => {
-  const hashed = crypto.createHash("sha256").update(req.params.token).digest("hex");
-  const user = await User.findOne({ verificationToken: hashed }).select("+verificationToken");
+  const hashed = crypto
+    .createHash("sha256")
+    .update(req.params.token)
+    .digest("hex");
+  const user = await User.findOne({ verificationToken: hashed }).select(
+    "+verificationToken",
+  );
 
   if (!user) {
     res.status(400);
@@ -74,14 +104,19 @@ export const loginUser = asyncHandler(async (req, res) => {
     "+password +loginAttempts +lockUntil",
   );
 
+  // Timing-safe: always run a bcrypt compare, even when user doesn't exist.
+  // Otherwise an attacker can enumerate valid emails by response time.
   if (!user) {
+    await bcrypt.compare(password, DUMMY_HASH);
     res.status(401);
     throw new Error("Invalid credentials");
   }
 
   if (user.isLocked) {
     res.status(423);
-    throw new Error("Account temporarily locked due to too many failed attempts. Try again in 15 minutes.");
+    throw new Error(
+      "Account temporarily locked due to too many failed attempts. Try again in 15 minutes.",
+    );
   }
 
   const ok = await user.matchPassword(password);
@@ -111,12 +146,7 @@ export const loginUser = asyncHandler(async (req, res) => {
 // @route   POST /api/users/logout
 // @access  Private
 export const logoutUser = asyncHandler(async (req, res) => {
-  res.cookie("jwt", "", {
-    httpOnly: true,
-    expires: new Date(0),
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    secure: process.env.NODE_ENV === "production",
-  });
+  clearAuthCookie(res);
   res.json({ success: true, message: "Logged out" });
 });
 
@@ -138,8 +168,19 @@ export const updateMe = asyncHandler(async (req, res) => {
   }
 
   const { name, email, phone, avatar, currentPassword, newPassword } = req.body;
+
+  // Pre-check email uniqueness for a clearer error than E11000
+  if (email && email !== user.email) {
+    const taken = await User.findOne({ email });
+    if (taken) {
+      res.status(400);
+      throw new Error("Email already in use");
+    }
+    user.email = email;
+    user.isVerified = false; // require re-verification on email change
+  }
+
   if (name) user.name = name;
-  if (email) user.email = email;
   if (phone !== undefined) user.phone = phone;
   if (avatar !== undefined) user.avatar = avatar;
 
@@ -180,12 +221,18 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 
   // Always respond success to avoid leaking existence
   if (!user) {
-    return res.json({ success: true, message: "If that email exists, a link has been sent." });
+    return res.json({
+      success: true,
+      message: "If that email exists, a link has been sent.",
+    });
   }
 
   const rawToken = crypto.randomBytes(32).toString("hex");
-  user.resetPasswordToken = crypto.createHash("sha256").update(rawToken).digest("hex");
-  user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 min
+  user.resetPasswordToken = crypto
+    .createHash("sha256")
+    .update(rawToken)
+    .digest("hex");
+  user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
   await user.save({ validateBeforeSave: false });
 
   const resetUrl = `${process.env.CLIENT_URL}/reset-password/${rawToken}`;
@@ -200,14 +247,20 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     throw new Error("Email could not be sent");
   }
 
-  res.json({ success: true, message: "If that email exists, a link has been sent." });
+  res.json({
+    success: true,
+    message: "If that email exists, a link has been sent.",
+  });
 });
 
 // @desc    Reset password
 // @route   POST /api/users/reset-password/:token
 // @access  Public
 export const resetPassword = asyncHandler(async (req, res) => {
-  const hashed = crypto.createHash("sha256").update(req.params.token).digest("hex");
+  const hashed = crypto
+    .createHash("sha256")
+    .update(req.params.token)
+    .digest("hex");
   const user = await User.findOne({
     resetPasswordToken: hashed,
     resetPasswordExpires: { $gt: Date.now() },
@@ -221,12 +274,21 @@ export const resetPassword = asyncHandler(async (req, res) => {
   user.password = req.body.password;
   user.resetPasswordToken = undefined;
   user.resetPasswordExpires = undefined;
+  // Clear any active lockouts so they can log in immediately
+  user.loginAttempts = 0;
+  user.lockUntil = undefined;
   await user.save();
+
+  // Kill the current session cookie. User must log in with the new password.
+  clearAuthCookie(res);
 
   res.json({ success: true, message: "Password updated. Please log in." });
 });
 
 // ======= ADMIN =======
+
+// Fields an admin is allowed to change on another user.
+const ADMIN_USER_WRITABLE_FIELDS = ["name", "email", "role", "isVerified"];
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -248,7 +310,7 @@ export const getUserById = asyncHandler(async (req, res) => {
   res.json({ success: true, user });
 });
 
-// @desc    Update user (admin can change role)
+// @desc    Update user (admin can change name, email, role, verified)
 // @route   PUT /api/users/:id
 // @access  Admin
 export const updateUser = asyncHandler(async (req, res) => {
@@ -258,12 +320,41 @@ export const updateUser = asyncHandler(async (req, res) => {
     throw new Error("User not found");
   }
 
-  const { name, email, role, isVerified } = req.body;
-  if (name) user.name = name;
-  if (email) user.email = email;
-  if (role && ["customer", "admin"].includes(role)) user.role = role;
-  if (isVerified !== undefined) user.isVerified = isVerified;
+  // Whitelist: admin cannot set password, tokens, lockouts, etc. through this route.
+  const updates = {};
+  for (const key of ADMIN_USER_WRITABLE_FIELDS) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
 
+  if (updates.role && !["customer", "admin"].includes(updates.role)) {
+    res.status(400);
+    throw new Error("Invalid role");
+  }
+
+  if (updates.email && updates.email !== user.email) {
+    const taken = await User.findOne({ email: updates.email });
+    if (taken && taken._id.toString() !== user._id.toString()) {
+      res.status(400);
+      throw new Error("Email already in use");
+    }
+  }
+
+  // Audit log for role changes — promoting to admin is security-sensitive.
+  if (updates.role && updates.role !== user.role) {
+    logger.info(
+      {
+        audit: "role_change",
+        targetUserId: user._id.toString(),
+        targetEmail: user.email,
+        fromRole: user.role,
+        toRole: updates.role,
+        adminUserId: req.user._id.toString(),
+        adminEmail: req.user.email,
+      },
+      "Admin changed user role",
+    );
+  }
+  Object.assign(user, updates);
   await user.save();
   res.json({ success: true, user });
 });

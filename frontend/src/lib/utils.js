@@ -4,12 +4,27 @@ import { twMerge } from "tailwind-merge";
 // Merge Tailwind classes safely (resolves conflicts like "p-2 p-4" → "p-4")
 export const cn = (...inputs) => twMerge(clsx(inputs));
 
-export const formatCurrency = (value, currency = "USD") =>
-  new Intl.NumberFormat(currency === "BDT" ? "bn-BD" : "en-US", {
+/**
+ * Format a number as currency.
+ * BDT renders with ৳ symbol but English numerals (cleaner than Bengali).
+ * USD renders normally.
+ */
+export const formatCurrency = (value, currency = "USD") => {
+  const num = Number(value) || 0;
+  if (currency === "BDT") {
+    // en-BD locale gives English numerals + ৳ symbol via Intl
+    return new Intl.NumberFormat("en-BD", {
+      style: "currency",
+      currency: "BDT",
+      maximumFractionDigits: 0,
+    }).format(num);
+  }
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
     maximumFractionDigits: 0,
-  }).format(Number(value) || 0);
+  }).format(num);
+};
 
 export const formatDate = (date) =>
   new Intl.DateTimeFormat("en-US", {

@@ -10,6 +10,7 @@ import {
   Home,
   X,
   AlertCircle,
+  Gift,
 } from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
@@ -72,6 +73,11 @@ export default function OrderDetailPage() {
       </div>
     );
   }
+
+  // Currency the order was placed in. Falls back to USD for old orders that
+  // pre-date the currency field migration.
+  const currency = order.currency || "USD";
+  const isFreeShippingPromo = /first order free/i.test(order.shippingTier || "");
 
   const currentIdx = statusIndex(order.status);
   const isCancelled = order.status === "cancelled";
@@ -137,7 +143,6 @@ export default function OrderDetailPage() {
         >
           <h2 className="mb-6 font-heading text-lg font-bold">Tracking</h2>
           <div className="relative">
-            {/* progress bar */}
             <div className="absolute left-5 top-5 bottom-5 w-0.5 bg-border sm:left-0 sm:top-5 sm:bottom-auto sm:h-0.5 sm:w-full" />
             <motion.div
               initial={{ scaleY: 0 }}
@@ -149,7 +154,6 @@ export default function OrderDetailPage() {
                   currentIdx >= 0
                     ? `${(currentIdx / (TRACKING_STEPS.length - 1)) * 100}%`
                     : "0%",
-                // On desktop we switch height->width. This inline style only affects mobile column.
               }}
             />
             <div className="relative space-y-5 sm:flex sm:space-y-0">
@@ -204,7 +208,6 @@ export default function OrderDetailPage() {
       )}
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_340px]">
-        {/* Items */}
         <div className="space-y-6">
           <Card title="Items" icon={Package}>
             <ul className="divide-y divide-border">
@@ -223,7 +226,7 @@ export default function OrderDetailPage() {
                       Size {it.size} · Qty {it.quantity}
                     </p>
                     <p className="mt-1 text-sm font-bold">
-                      {formatCurrency(it.price * it.quantity)}
+                      {formatCurrency(it.price * it.quantity, currency)}
                     </p>
                   </div>
                 </li>
@@ -278,20 +281,49 @@ export default function OrderDetailPage() {
         <div className="rounded-lg border border-border bg-muted/20 p-5 lg:sticky lg:top-24 lg:self-start">
           <h2 className="mb-4 font-heading text-lg font-bold">Total</h2>
           <div className="space-y-2 text-sm">
-            <Row label="Subtotal" value={formatCurrency(order.subtotal)} />
-            <Row label="Shipping" value={formatCurrency(order.shippingCost)} />
+            <Row label="Subtotal" value={formatCurrency(order.subtotal, currency)} />
+            <Row
+              label={isFreeShippingPromo ? "Shipping (first order)" : "Shipping"}
+              value={
+                order.shippingCost === 0 ? (
+                  <span className="text-success font-semibold">
+                    {isFreeShippingPromo ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Gift className="h-3 w-3" /> Free
+                      </span>
+                    ) : (
+                      "Free"
+                    )}
+                  </span>
+                ) : (
+                  formatCurrency(order.shippingCost, currency)
+                )
+              }
+            />
+            {order.tax > 0 && !order.taxLabel?.toLowerCase().includes("(incl") && (
+              <Row
+                label={order.taxLabel || "Tax"}
+                value={formatCurrency(order.tax, currency)}
+              />
+            )}
             {order.discount > 0 && (
               <Row
                 label="Discount"
-                value={`-${formatCurrency(order.discount)}`}
+                value={`-${formatCurrency(order.discount, currency)}`}
                 valueClass="text-success"
               />
             )}
             <Row
               label="Total"
-              value={formatCurrency(order.total)}
+              value={formatCurrency(order.total, currency)}
               className="border-t border-border pt-3 text-base font-bold"
             />
+            {order.tax > 0 && order.taxLabel?.toLowerCase().includes("(incl") && (
+              <p className="pt-1 text-xs text-muted-foreground">
+                Includes {order.taxLabel.replace(/\s*\(incl\.\)/i, "")} of{" "}
+                {formatCurrency(order.tax, currency)}
+              </p>
+            )}
           </div>
         </div>
       </div>

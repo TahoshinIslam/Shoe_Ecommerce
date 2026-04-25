@@ -10,14 +10,21 @@ export const uploadSingle = asyncHandler(async (req, res) => {
     throw new Error("No file uploaded");
   }
   const folder = req.query.folder || "shoestore";
-  const result = await uploadBuffer(req.file.buffer, folder);
-  res.status(201).json({
-    success: true,
-    url: result.secure_url,
-    publicId: result.public_id,
-    width: result.width,
-    height: result.height,
-  });
+  try {
+    const result = await uploadBuffer(req.file.buffer, folder);
+    res.status(201).json({
+      success: true,
+      url: result.secure_url,
+      publicId: result.public_id,
+      width: result.width,
+      height: result.height,
+    });
+  } catch (err) {
+    res.status(500);
+    throw new Error(
+      err.message || "Image upload failed. Check Cloudinary configuration.",
+    );
+  }
 });
 
 // @desc    Upload multiple images
@@ -29,18 +36,25 @@ export const uploadMultiple = asyncHandler(async (req, res) => {
     throw new Error("No files uploaded");
   }
   const folder = req.query.folder || "shoestore";
-  const results = await Promise.all(
-    req.files.map((f) => uploadBuffer(f.buffer, folder)),
-  );
-  res.status(201).json({
-    success: true,
-    files: results.map((r) => ({
-      url: r.secure_url,
-      publicId: r.public_id,
-      width: r.width,
-      height: r.height,
-    })),
-  });
+  try {
+    const results = await Promise.all(
+      req.files.map((f) => uploadBuffer(f.buffer, folder)),
+    );
+    res.status(201).json({
+      success: true,
+      files: results.map((r) => ({
+        url: r.secure_url,
+        publicId: r.public_id,
+        width: r.width,
+        height: r.height,
+      })),
+    });
+  } catch (err) {
+    res.status(500);
+    throw new Error(
+      err.message || "Image upload failed. Check Cloudinary configuration.",
+    );
+  }
 });
 
 // @desc    Delete image by public ID
@@ -48,6 +62,13 @@ export const uploadMultiple = asyncHandler(async (req, res) => {
 // @access  Admin
 export const removeImage = asyncHandler(async (req, res) => {
   const publicId = decodeURIComponent(req.params.publicId);
-  const result = await deleteImage(publicId);
-  res.json({ success: true, result });
+  try {
+    const result = await deleteImage(publicId);
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500);
+    throw new Error(
+      err.message || "Image deletion failed. Check Cloudinary configuration.",
+    );
+  }
 });
