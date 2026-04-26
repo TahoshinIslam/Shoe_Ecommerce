@@ -6,6 +6,8 @@ import Coupon from "../models/couponModel.js";
 import Cart from "../models/cartModel.js";
 import Payment from "../models/paymentModel.js";
 import Settings from "../models/settingsModel.js";
+import User from "../models/userModel.js";
+import { createAdminNotification } from "../controllers/notificationController.js";
 
 const regionFromCountry = (country) => {
   const c = String(country || "").toUpperCase();
@@ -33,7 +35,8 @@ const calcShipping = (region, subtotal, settings, tierName) => {
 
 const calcTax = (region, subtotal, settings) => {
   const rule = settings.taxRules.find((r) => r.region === region);
-  if (!rule || rule.rate === 0) return { amount: 0, label: "", inclusive: false };
+  if (!rule || rule.rate === 0)
+    return { amount: 0, label: "", inclusive: false };
 
   if (rule.inclusive) {
     const taxAmount = Math.round((subtotal * rule.rate) / (1 + rule.rate));
@@ -51,16 +54,34 @@ const calcTax = (region, subtotal, settings) => {
 };
 
 /**
- * Has this user ever placed an order before? Used to determine eligibility
- * for first-order free shipping. We count any order that wasn't cancelled
- * as a "real" prior order.
+ * First-order free-shipping promo eligibility.
+ *
+ * `commit=false` (preview): just read the user's flag. Don't change anything.
+ * `commit=true` (real order): atomically flip the flag from false→true.
+ *   If the update returns a doc, this caller "won" and gets the promo.
+ *   If null, someone else (or an earlier order) already claimed it.
+ *
+ * The atomic findOneAndUpdate is critical — without it, two concurrent
+ * orders submitted in the same millisecond would both see "no prior order"
+ * and both get free shipping. With it, exactly one wins.
+ *
+ * Once consumed, the flag is sticky: cancelling the first order does NOT
+ * restore eligibility. This prevents the cancel-to-reset abuse pattern.
  */
-const hasPriorOrder = async (userId, session) => {
-  const count = await Order.countDocuments({
-    user: userId,
-    status: { $ne: "cancelled" },
-  }).session(session || null);
-  return count > 0;
+const claimFirstOrderPromo = async (userId, session, commit) => {
+  if (!userId) return false;
+  if (!commit) {
+    const u = await User.findById(userId)
+      .select("firstOrderPromoUsed")
+      .session(session || null);
+    return !u?.firstOrderPromoUsed;
+  }
+  const updated = await User.findOneAndUpdate(
+    { _id: userId, firstOrderPromoUsed: { $ne: true } },
+    { $set: { firstOrderPromoUsed: true } },
+    { session, new: true, projection: { _id: 1 } },
+  );
+  return !!updated;
 };
 
 const calcTotals = async (
@@ -70,6 +91,7 @@ const calcTotals = async (
   shippingTier,
   userId,
   session,
+  { commitPromo = false } = {},
 ) => {
   const settings = await Settings.getSingleton();
   const region = regionFromCountry(shippingAddress?.country);
@@ -112,7 +134,8 @@ const calcTotals = async (
       code: couponCode.toUpperCase(),
       isActive: true,
     }).session(session);
-    if (!couponDoc) throw Object.assign(new Error("Invalid coupon"), { status: 400 });
+    if (!couponDoc)
+      throw Object.assign(new Error("Invalid coupon"), { status: 400 });
     if (couponDoc.expiresAt && couponDoc.expiresAt < new Date()) {
       throw Object.assign(new Error("Coupon expired"), { status: 400 });
     }
@@ -126,23 +149,20 @@ const calcTotals = async (
       couponDoc.discountType === "percentage"
         ? Math.round((subtotal * couponDoc.discountValue) / 100)
         : couponDoc.discountValue;
-    if (couponDoc.maxDiscount) discount = Math.min(discount, couponDoc.maxDiscount);
+    if (couponDoc.maxDiscount)
+      discount = Math.min(discount, couponDoc.maxDiscount);
   }
 
   const tax = calcTax(region, subtotal, settings);
   const ship = calcShipping(region, subtotal, settings, shippingTier);
 
-  // First-order free shipping promo. If admin has it enabled AND this is
-  // the user's first order, override shipping to 0 and label the tier so
-  // we know why it was free.
+  // First-order free shipping promo. Only attempts the claim when the promo
+  // is admin-enabled, the user is logged in, and shipping isn't already free
+  // (no point claiming a one-time benefit on an already-free order).
   let appliedFirstOrderPromo = false;
-  if (
-    settings.promotions?.firstOrderFreeShipping &&
-    userId &&
-    ship.cost > 0
-  ) {
-    const prior = await hasPriorOrder(userId, session);
-    if (!prior) {
+  if (settings.promotions?.firstOrderFreeShipping && userId && ship.cost > 0) {
+    const eligible = await claimFirstOrderPromo(userId, session, commitPromo);
+    if (eligible) {
       ship.cost = 0;
       ship.tier = `${ship.tier} (First order free)`.trim();
       appliedFirstOrderPromo = true;
@@ -191,13 +211,16 @@ export const createOrder = asyncHandler(async (req, res) => {
         shippingTier,
         req.user._id,
         session,
+        { commitPromo: true },
       );
 
       for (const it of t.lineItems) {
         const result = await Product.updateOne(
           {
             _id: it.product,
-            sizes: { $elemMatch: { size: it.size, stock: { $gte: it.quantity } } },
+            sizes: {
+              $elemMatch: { size: it.size, stock: { $gte: it.quantity } },
+            },
           },
           { $inc: { "sizes.$.stock": -it.quantity } },
           { session },
@@ -257,6 +280,12 @@ export const createOrder = asyncHandler(async (req, res) => {
   }
 
   res.status(201).json({ success: true, order: createdOrder });
+
+  // Fire-and-forget admin notification (don't block response)
+  createAdminNotification({
+    message: `New order #${createdOrder._id.toString().slice(-6)} received`,
+    url: `/admin/orders`,
+  }).catch(() => {});
 });
 
 export const previewOrder = asyncHandler(async (req, res) => {
@@ -301,7 +330,10 @@ export const getMyOrders = asyncHandler(async (req, res) => {
 });
 
 export const getOrder = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id).populate("user", "name email");
+  const order = await Order.findById(req.params.id).populate(
+    "user",
+    "name email",
+  );
   if (!order) {
     res.status(404);
     throw new Error("Order not found");
@@ -320,7 +352,8 @@ export const cancelOrder = asyncHandler(async (req, res) => {
   try {
     await session.withTransaction(async () => {
       const order = await Order.findById(req.params.id).session(session);
-      if (!order) throw Object.assign(new Error("Order not found"), { status: 404 });
+      if (!order)
+        throw Object.assign(new Error("Order not found"), { status: 404 });
       if (
         order.user.toString() !== req.user._id.toString() &&
         req.user.role !== "admin"

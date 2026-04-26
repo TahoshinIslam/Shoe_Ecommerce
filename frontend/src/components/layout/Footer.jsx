@@ -1,10 +1,13 @@
 import { Link } from "react-router-dom";
 import { Facebook, Instagram, Twitter, Youtube, Mail } from "lucide-react";
 import { useTheme } from "../../contexts/ThemeProvider.jsx";
+import { useSettings } from "../../contexts/SettingsContext.jsx";
 
 export default function Footer() {
   const { theme } = useTheme();
-  const siteName = theme?.siteName || "ShoeStore";
+  const settings = useSettings();
+  // Settings is the source of truth for shop name; theme is the legacy fallback.
+  const siteName = settings?.store?.name || theme?.siteName || "ShoeStore";
 
   return (
     <footer className="mt-24 border-t border-border bg-muted/30">

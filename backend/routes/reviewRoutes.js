@@ -9,13 +9,13 @@ import {
   markHelpful,
   replyToReview,
 } from "../controllers/reviewController.js";
-import { protect, admin } from "../middleware/authMiddleware.js";
+import { protect, authorize } from "../middleware/authMiddleware.js";
 import { validate } from "../middleware/validator.js";
 
 const router = express.Router();
 
 // Admin-wide listing (must come before /:id-style routes)
-router.get("/", protect, admin, listAllReviews);
+router.get("/", protect, authorize("readReviews"), listAllReviews);
 
 router.get("/product/:productId", getProductReviews);
 
@@ -34,6 +34,6 @@ router.post(
 router.put("/:id", protect, updateReview);
 router.delete("/:id", protect, deleteReview);
 router.post("/:id/helpful", protect, markHelpful);
-router.post("/:id/reply", protect, admin, replyToReview);
+router.post("/:id/reply", protect, authorize("manageReviews"), replyToReview);
 
 export default router;

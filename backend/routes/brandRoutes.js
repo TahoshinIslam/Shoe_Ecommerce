@@ -6,15 +6,15 @@ import {
   updateBrand,
   deleteBrand,
 } from "../controllers/brandController.js";
-import { protect, admin } from "../middleware/authMiddleware.js";
+import { protect, authorize } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
 router.get("/", getBrands);
 router.get("/:id", getBrand);
 
-router.post("/", protect, admin, createBrand);
-router.put("/:id", protect, admin, updateBrand);
-router.delete("/:id", protect, admin, deleteBrand);
+router.post("/", protect, authorize("manageBrands"), createBrand);
+router.put("/:id", protect, authorize("manageBrands"), updateBrand);
+router.delete("/:id", protect, authorize("manageBrands"), deleteBrand);
 
 export default router;

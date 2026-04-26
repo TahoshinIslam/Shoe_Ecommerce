@@ -25,7 +25,12 @@ export const getPublicSettings = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     settings: {
-      store: { name: s.store.name },
+      store: {
+        name: s.store.name,
+        logoUrl: s.store.logoUrl || "",
+        logoDarkUrl: s.store.logoDarkUrl || "",
+        faviconUrl: s.store.faviconUrl || "",
+      },
       currency: s.currency,
       // Surface the first-order-free-shipping promo so the customer UI can
       // show a "first order? shipping is on us" hint before they hit checkout.

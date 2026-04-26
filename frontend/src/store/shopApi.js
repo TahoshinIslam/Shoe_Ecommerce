@@ -260,6 +260,26 @@ const uploadEndpoints = (b) => ({
   }),
 });
 
+// ====== Notifications (admin/employee) ======
+const notificationEndpoints = (b) => ({
+  getNotifications: b.query({
+    query: ({ page = 1, limit = 20, unreadOnly = false } = {}) => {
+      const params = new URLSearchParams({ page, limit });
+      if (unreadOnly) params.set("unreadOnly", "true");
+      return `/notifications?${params.toString()}`;
+    },
+    providesTags: ["Notification"],
+  }),
+  markNotificationRead: b.mutation({
+    query: (id) => ({ url: `/notifications/${id}/read`, method: "PATCH" }),
+    invalidatesTags: ["Notification"],
+  }),
+  markAllNotificationsRead: b.mutation({
+    query: () => ({ url: `/notifications/read-all`, method: "PATCH" }),
+    invalidatesTags: ["Notification"],
+  }),
+});
+
 // ====== Categories / Brands ======
 const categoryBrandEndpoints = (b) => ({
   getCategories: b.query({
@@ -309,6 +329,7 @@ export const shopApi = apiSlice.injectEndpoints({
     ...analyticsEndpoints(b),
     ...uploadEndpoints(b),
     ...categoryBrandEndpoints(b),
+    ...notificationEndpoints(b),
   }),
 });
 
@@ -365,4 +386,7 @@ export const {
   useCreateBrandMutation,
   useUpdateBrandMutation,
   useDeleteBrandMutation,
+  useGetNotificationsQuery,
+  useMarkNotificationReadMutation,
+  useMarkAllNotificationsReadMutation,
 } = shopApi;

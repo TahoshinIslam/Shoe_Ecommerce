@@ -288,7 +288,33 @@ export const resetPassword = asyncHandler(async (req, res) => {
 // ======= ADMIN =======
 
 // Fields an admin is allowed to change on another user.
-const ADMIN_USER_WRITABLE_FIELDS = ["name", "email", "role", "isVerified"];
+const ADMIN_USER_WRITABLE_FIELDS = [
+  "name",
+  "email",
+  "role",
+  "isVerified",
+  "permissions",
+];
+
+const VALID_ROLES = ["customer", "employee", "admin"];
+
+// Permissions an admin can grant to an employee. Kept in sync with the
+// authorize(...) calls in routes/*.
+const VALID_PERMISSIONS = [
+  "readOrders",
+  "manageOrders",
+  "readReviews",
+  "manageReviews",
+  "manageProducts",
+  "manageCategories",
+  "manageBrands",
+  "manageCoupons",
+  "manageThemes",
+  "manageSettings",
+  "manageUploads",
+  "readAnalytics",
+  "readNotifications",
+];
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -310,7 +336,7 @@ export const getUserById = asyncHandler(async (req, res) => {
   res.json({ success: true, user });
 });
 
-// @desc    Update user (admin can change name, email, role, verified)
+// @desc    Update user (admin can change name, email, role, verified, permissions)
 // @route   PUT /api/users/:id
 // @access  Admin
 export const updateUser = asyncHandler(async (req, res) => {
@@ -326,9 +352,39 @@ export const updateUser = asyncHandler(async (req, res) => {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
   }
 
-  if (updates.role && !["customer", "admin"].includes(updates.role)) {
+  // Footgun guard: an admin cannot demote themselves or strip their own
+  // permissions. If the only admin demotes themselves the system loses its
+  // last admin and nobody can repair it through the UI.
+  const isSelf = user._id.toString() === req.user._id.toString();
+  if (isSelf && (updates.role !== undefined || updates.permissions !== undefined)) {
+    res.status(400);
+    throw new Error("You cannot change your own role or permissions");
+  }
+
+  if (updates.role && !VALID_ROLES.includes(updates.role)) {
     res.status(400);
     throw new Error("Invalid role");
+  }
+
+  if (updates.permissions !== undefined) {
+    if (!Array.isArray(updates.permissions)) {
+      res.status(400);
+      throw new Error("Permissions must be an array");
+    }
+    const bad = updates.permissions.filter(
+      (p) => !VALID_PERMISSIONS.includes(p),
+    );
+    if (bad.length) {
+      res.status(400);
+      throw new Error(`Invalid permission(s): ${bad.join(", ")}`);
+    }
+  }
+
+  // Permissions only meaningful for employees. Clear them for other roles
+  // so a demoted employee doesn't keep latent rights.
+  const finalRole = updates.role ?? user.role;
+  if (finalRole !== "employee") {
+    updates.permissions = [];
   }
 
   if (updates.email && updates.email !== user.email) {
@@ -339,7 +395,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     }
   }
 
-  // Audit log for role changes — promoting to admin is security-sensitive.
+  // Audit log for role changes — promoting to admin/employee is security-sensitive.
   if (updates.role && updates.role !== user.role) {
     logger.info(
       {

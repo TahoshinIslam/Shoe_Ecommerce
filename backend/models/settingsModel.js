@@ -36,6 +36,12 @@ const settingsSchema = new mongoose.Schema(
       name: { type: String, default: "My Store" },
       supportEmail: { type: String, default: "" },
       supportPhone: { type: String, default: "" },
+      // Branding — the live site reads from these. Admin can either paste
+      // an existing URL or upload a file via the Settings page (which uses
+      // the existing /api/upload endpoint and stores the returned URL here).
+      logoUrl: { type: String, default: "" },
+      logoDarkUrl: { type: String, default: "" },
+      faviconUrl: { type: String, default: "" },
     },
 
     currency: {

@@ -151,14 +151,21 @@ export default function CheckoutPage() {
     };
   }, [items, selectedAddress, appliedCoupon, previewOrder]);
 
-  // Local fallback math used only before first preview response arrives
+  // Local fallback math used only before first preview response arrives.
+  // We compute in the user's display currency here so the UI doesn't flicker
+  // before the server preview lands; once it does, totals.currency is the
+  // authoritative checkout currency and we'll re-render everything in it.
   const fallbackTotals = useMemo(() => {
     let subtotal = 0;
     for (const it of items) {
       const p = it.product;
       if (!p) continue;
-      const price = p.discountPrice ?? p.basePrice;
-      subtotal += price * it.quantity;
+      const usdPrice = p.discountPrice ?? p.basePrice;
+      const localPrice =
+        settings.activeCurrency === "BDT"
+          ? Math.round(usdPrice * (settings.currency?.usdToBdt || 120))
+          : usdPrice;
+      subtotal += localPrice * it.quantity;
     }
     return {
       subtotal,
@@ -168,12 +175,22 @@ export default function CheckoutPage() {
       shippingCost: 0,
       discount: 0,
       total: subtotal,
-      currency: "USD",
+      currency: settings.activeCurrency || "USD",
     };
-  }, [items]);
+  }, [items, settings.activeCurrency, settings.currency?.usdToBdt]);
 
   const totals = serverTotals || fallbackTotals;
   const displayCurrency = totals.currency;
+
+  // Convert a USD-stored product price into the active checkout currency.
+  // The checkout currency is dictated by the shipping address (BD → BDT,
+  // else USD), not by the user's browse-currency preference. This keeps
+  // line items and totals in the same currency so the math reads cleanly.
+  const toCheckoutPrice = (usdPrice) => {
+    const rate = settings.currency?.usdToBdt || 120;
+    if (displayCurrency === "BDT") return Math.round(Number(usdPrice) * rate);
+    return Number(usdPrice);
+  };
 
   const handleNewAddress = async (data) => {
     try {
@@ -421,7 +438,7 @@ export default function CheckoutPage() {
                 const p = it.product;
                 if (!p) return null;
                 const usdPrice = p.discountPrice ?? p.basePrice;
-                const lineTotalUsd = usdPrice * it.quantity;
+                const lineTotal = toCheckoutPrice(usdPrice) * it.quantity;
                 return (
                   <li key={`${p._id}-${it.size}`} className="py-3">
                     <div className="flex gap-3">
@@ -435,8 +452,8 @@ export default function CheckoutPage() {
                         <p className="text-xs text-muted-foreground">Size {it.size} · Qty {it.quantity}</p>
                       </div>
                       <p className="text-sm font-bold">
-                        {/* Use settings.formatPrice — converts USD → active currency consistently */}
-                        {settings.formatPrice(lineTotalUsd)}
+                        {/* In checkout currency — matches subtotal/total below */}
+                        {formatCurrency(lineTotal, displayCurrency)}
                       </p>
                     </div>
                   </li>

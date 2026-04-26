@@ -38,6 +38,28 @@ export const admin = (req, res, next) => {
   throw new Error("Admin access only");
 };
 
+/**
+ * Permission-based guard — run AFTER protect.
+ * - Admin role → always allowed.
+ * - Employee role → allowed if they have the specific permission.
+ * - Otherwise → 403.
+ */
+export const authorize = (permission) => (req, res, next) => {
+  if (!req.user) {
+    res.status(401);
+    throw new Error("Not authorized");
+  }
+  if (req.user.role === "admin") return next();
+  if (
+    req.user.role === "employee" &&
+    req.user.permissions?.includes(permission)
+  ) {
+    return next();
+  }
+  res.status(403);
+  throw new Error(`Forbidden: requires '${permission}' permission`);
+};
+
 // Optional role check factory
 export const requireRole =
   (...roles) =>

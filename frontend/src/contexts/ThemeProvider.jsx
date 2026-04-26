@@ -104,16 +104,12 @@ export default function ThemeProvider({ children }) {
       if (theme.fonts?.heading) root.style.setProperty("--font-heading", theme.fonts.heading);
       if (theme.fonts?.body) root.style.setProperty("--font-body", theme.fonts.body);
 
-      if (theme.siteName) document.title = theme.siteName;
-      if (theme.faviconUrl) {
-        let link = document.querySelector("link[rel='icon']");
-        if (!link) {
-          link = document.createElement("link");
-          link.rel = "icon";
-          document.head.appendChild(link);
-        }
-        link.href = theme.faviconUrl;
-      }
+      // NOTE: document.title and favicon are intentionally NOT applied here.
+      // SettingsContext owns those side-effects and sources them from
+      // settings.store (which the admin edits in the Settings page). Having
+      // both providers race to set the same DOM was a real bug — Settings
+      // would update, ThemeProvider would re-run on theme change and clobber
+      // it back to the theme's stale siteName. Single owner = single source.
     } else {
       // No theme data — clear any previously-set inline colors so the
       // :root / .dark fallbacks in index.css apply.

@@ -14,19 +14,22 @@ import {
   useUpdateCartItemMutation,
   useRemoveFromCartMutation,
 } from "../../store/shopApi.js";
-import { formatCurrency } from "../../lib/utils.js";
+import { useSettings } from "../../contexts/SettingsContext.jsx";
 
 export default function CartDrawer() {
   const open = useSelector((s) => s.ui.cartOpen);
   const user = useSelector(selectCurrentUser);
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const settings = useSettings();
   const { data, isLoading } = useGetCartQuery(undefined, { skip: !user });
   const [updateItem] = useUpdateCartItemMutation();
   const [removeItem] = useRemoveFromCartMutation();
   const [updatingKeys, setUpdatingKeys] = useState(new Set());
 
   const items = data?.cart?.items || [];
+  // Subtotal stays in USD-equivalent product units; settings.formatPrice
+  // converts to the active display currency at render time.
   const subtotal = items.reduce((sum, i) => {
     const p = i.product;
     if (!p) return sum;
@@ -167,7 +170,7 @@ export default function CartDrawer() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold">
-                          {formatCurrency(price * item.quantity)}
+                          {settings.formatPrice(price * item.quantity)}
                         </span>
                         <button
                           onClick={() => handleRemove(p._id, item.size)}
@@ -188,13 +191,13 @@ export default function CartDrawer() {
           <div className="sticky bottom-0 border-t border-border bg-background p-4">
             <div className="mb-3 flex justify-between text-sm">
               <span className="text-muted-foreground">Subtotal</span>
-              <span className="font-bold">{formatCurrency(subtotal)}</span>
+              <span className="font-bold">{settings.formatPrice(subtotal)}</span>
             </div>
             <p className="mb-3 text-xs text-muted-foreground">
               Shipping & taxes calculated at checkout.
             </p>
             <Button onClick={goCheckout} size="lg" className="w-full">
-              Checkout — {formatCurrency(subtotal)}
+              Checkout — {settings.formatPrice(subtotal)}
             </Button>
           </div>
         </>

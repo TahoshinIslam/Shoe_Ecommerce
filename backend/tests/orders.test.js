@@ -182,3 +182,122 @@ describe("Orders — rejects client-provided totals", () => {
     expect(res.body.order.subtotal).not.toBe(1);
   });
 });
+
+// ---------- First-order free shipping promo ----------
+//
+// When admin enables "free shipping on first order", a new customer's first
+// real order should have shippingCost = 0. Their second order should NOT.
+// And concurrent first-orders must not both claim the benefit.
+
+const enableFirstOrderPromo = async () => {
+  await Settings.findOneAndUpdate(
+    { _id: "main" },
+    { $set: { "promotions.firstOrderFreeShipping": true } },
+  );
+};
+
+describe("Orders — first-order free shipping promo", () => {
+  it("waives shipping on the user's first order", async () => {
+    await seedDefaultSettings();
+    await enableFirstOrderPromo();
+    const user = await createUser({ email: "first@example.com" });
+    const product = await createProduct({
+      sizes: [{ size: "42", stock: 5 }],
+      basePrice: 100,
+    });
+
+    const req = await authedRequest(user);
+    const res = await req.post("/api/orders").send({
+      items: [{ product: product._id, size: "42", quantity: 1 }],
+      shippingAddress: validAddress,
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.order.shippingCost).toBe(0);
+    expect(res.body.order.shippingTier).toMatch(/First order free/);
+  });
+
+  it("does NOT waive shipping on the user's second order", async () => {
+    await seedDefaultSettings();
+    await enableFirstOrderPromo();
+    const user = await createUser({ email: "second@example.com" });
+    const product = await createProduct({
+      sizes: [{ size: "42", stock: 5 }],
+      basePrice: 100,
+    });
+
+    const req = await authedRequest(user);
+    const first = await req.post("/api/orders").send({
+      items: [{ product: product._id, size: "42", quantity: 1 }],
+      shippingAddress: validAddress,
+    });
+    expect(first.status).toBe(201);
+    expect(first.body.order.shippingCost).toBe(0);
+
+    const second = await req.post("/api/orders").send({
+      items: [{ product: product._id, size: "42", quantity: 1 }],
+      shippingAddress: validAddress,
+    });
+    expect(second.status).toBe(201);
+    expect(second.body.order.shippingCost).toBeGreaterThan(0);
+    expect(second.body.order.shippingTier).not.toMatch(/First order free/);
+  });
+
+  it("does NOT restore eligibility after cancelling the first order", async () => {
+    // The bug we're locking in: a user could previously cancel + reorder to
+    // re-trigger the promo, because the eligibility check excluded cancelled
+    // orders. The flag-based approach makes the promo single-use.
+    await seedDefaultSettings();
+    await enableFirstOrderPromo();
+    const user = await createUser({ email: "abuser@example.com" });
+    const product = await createProduct({
+      sizes: [{ size: "42", stock: 5 }],
+      basePrice: 100,
+    });
+
+    const req = await authedRequest(user);
+    const first = await req.post("/api/orders").send({
+      items: [{ product: product._id, size: "42", quantity: 1 }],
+      shippingAddress: validAddress,
+    });
+    expect(first.status).toBe(201);
+    await req.post(`/api/orders/${first.body.order._id}/cancel`);
+
+    const second = await req.post("/api/orders").send({
+      items: [{ product: product._id, size: "42", quantity: 1 }],
+      shippingAddress: validAddress,
+    });
+    expect(second.status).toBe(201);
+    expect(second.body.order.shippingCost).toBeGreaterThan(0);
+  });
+
+  it("only one of two concurrent first-orders gets free shipping", async () => {
+    // Race-condition lock-in. With the old count-based check both orders
+    // would observe count=0 and both get the promo. With the atomic flag
+    // exactly one wins.
+    await seedDefaultSettings();
+    await enableFirstOrderPromo();
+    const user = await createUser({ email: "race@example.com" });
+    const product = await createProduct({
+      sizes: [{ size: "42", stock: 5 }],
+      basePrice: 100,
+    });
+
+    const req = await authedRequest(user);
+    const [r1, r2] = await Promise.all([
+      req.post("/api/orders").send({
+        items: [{ product: product._id, size: "42", quantity: 1 }],
+        shippingAddress: validAddress,
+      }),
+      req.post("/api/orders").send({
+        items: [{ product: product._id, size: "42", quantity: 1 }],
+        shippingAddress: validAddress,
+      }),
+    ]);
+
+    expect(r1.status).toBe(201);
+    expect(r2.status).toBe(201);
+    const freeCount = [r1, r2].filter((r) => r.body.order.shippingCost === 0).length;
+    expect(freeCount).toBe(1);
+  });
+});

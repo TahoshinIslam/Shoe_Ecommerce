@@ -30,6 +30,7 @@ import "./models/couponModel.js";
 import "./models/paymentModel.js";
 import "./models/themeModel.js";
 import "./models/settingsModel.js";
+import "./models/notificationModel.js";
 
 // --- route imports ---
 import userRoutes from "./routes/userRoutes.js";
@@ -47,6 +48,7 @@ import themeRoutes from "./routes/themeRoutes.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
 import settingsRoutes from "./routes/settingsRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 
 import { stripeWebhook } from "./controllers/paymentController.js";
 
@@ -128,6 +130,7 @@ app.use("/api/theme", themeRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/notifications", notificationRoutes);
 app.use(notFound);
 
 if (process.env.SENTRY_DSN && process.env.NODE_ENV !== "test") {

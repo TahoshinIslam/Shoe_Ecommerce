@@ -24,8 +24,12 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["customer", "admin"],
+      enum: ["customer", "employee", "admin"],
       default: "customer",
+    },
+    permissions: {
+      type: [String],
+      default: [],
     },
     avatar: {
       type: String,
@@ -62,6 +66,15 @@ const userSchema = new mongoose.Schema(
     },
     lastLogin: {
       type: Date,
+    },
+
+    // First-order promo (e.g. free shipping on first order). Once true, the
+    // user has consumed this benefit and cannot use it again — even if they
+    // cancel that first order. Toggled atomically inside the order
+    // transaction so concurrent orders can't both claim it.
+    firstOrderPromoUsed: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true },

@@ -95,6 +95,7 @@ export const apiSlice = createApi({
     "Payment",
     "Theme",
     "Analytics",
+    "Notification",
   ],
   endpoints: () => ({}),
 });

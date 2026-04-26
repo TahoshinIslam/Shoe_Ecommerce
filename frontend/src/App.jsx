@@ -32,6 +32,7 @@ import AdminCouponsPage from "./pages/admin/CouponsPage.jsx";
 import AdminReviewsPage from "./pages/admin/ReviewsPage.jsx";
 import AdminThemesPage from "./pages/admin/ThemesPage.jsx";
 import AdminSettingsPage from "./pages/admin/SettingsPage.jsx";
+import AdminCategoriesPage from "./pages/admin/CategoriesPage.jsx";
 
 // 404
 import { NotFoundPage } from "./pages/StubPages.jsx";
@@ -85,6 +86,7 @@ export default function App() {
                   <Route path="users" element={<AdminUsersPage />} />
                   <Route path="coupons" element={<AdminCouponsPage />} />
                   <Route path="reviews" element={<AdminReviewsPage />} />
+                  <Route path="categories" element={<AdminCategoriesPage />} />
                   <Route path="themes" element={<AdminThemesPage />} />
                   <Route path="settings" element={<AdminSettingsPage />} />
                 </Route>

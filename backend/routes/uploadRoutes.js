@@ -4,7 +4,7 @@ import {
   uploadMultiple,
   removeImage,
 } from "../controllers/uploadController.js";
-import { protect, admin } from "../middleware/authMiddleware.js";
+import { protect, authorize } from "../middleware/authMiddleware.js";
 import { upload } from "../middleware/uploadMiddleware.js";
 
 const router = express.Router();
@@ -16,6 +16,6 @@ router.post("/", protect, upload.single("image"), uploadSingle);
 router.post("/multiple", protect, upload.array("images", 8), uploadMultiple);
 
 // Delete by Cloudinary publicId (admin only)
-router.delete("/:publicId", protect, admin, removeImage);
+router.delete("/:publicId", protect, authorize("manageUploads"), removeImage);
 
 export default router;

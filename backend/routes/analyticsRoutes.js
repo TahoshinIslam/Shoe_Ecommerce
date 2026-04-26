@@ -6,11 +6,11 @@ import {
   getStatusBreakdown,
   getRevenueByMethod,
 } from "../controllers/analyticsController.js";
-import { protect, admin } from "../middleware/authMiddleware.js";
+import { protect, authorize } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-router.use(protect, admin);
+router.use(protect, authorize("readAnalytics"));
 
 router.get("/overview", getOverview);
 router.get("/sales-series", getSalesSeries);

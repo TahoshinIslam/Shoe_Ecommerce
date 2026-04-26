@@ -9,7 +9,11 @@ import {
 const SettingsContext = createContext(null);
 
 const DEFAULTS = {
-  store: { name: "Store" },
+  // Empty strings (not "Store") so consumers using
+  // `settings.store.name || theme.siteName` correctly fall through to the
+  // theme-provided defaults during the brief window before the network
+  // fetch lands.
+  store: { name: "", logoUrl: "", logoDarkUrl: "", faviconUrl: "" },
   currency: { defaultDisplay: "BDT", usdToBdt: 120 },
 };
 
@@ -60,6 +64,38 @@ const setCachedSettings = (data) => {
   }
 };
 
+/**
+ * Bust the settings cache. Called from the admin SettingsPage right after
+ * a save so the admin sees the change immediately on their own site visit.
+ * Other browsers will pick up the change within SETTINGS_CACHE_TTL.
+ */
+export const bustSettingsCache = () => {
+  try {
+    sessionStorage.removeItem(SETTINGS_CACHE_KEY);
+  } catch {
+    // ignore
+  }
+};
+
+// Apply branding side effects to the document.
+//   - document.title from store.name
+//   - <link rel="icon"> from store.faviconUrl
+// Both are optional; we only update if a value is provided so we don't
+// blow away a useful theme-derived default.
+const applyBranding = (store) => {
+  if (!store) return;
+  if (store.name) document.title = store.name;
+  if (store.faviconUrl) {
+    let link = document.querySelector("link[rel='icon']");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    link.href = store.faviconUrl;
+  }
+};
+
 export const SettingsProvider = ({ children }) => {
   const cached = getCachedSettings();
   const [settings, setSettings] = useState(cached || DEFAULTS);
@@ -68,27 +104,42 @@ export const SettingsProvider = ({ children }) => {
     detectCurrency(cached?.currency?.defaultDisplay || "USD"),
   );
 
-  useEffect(() => {
-    // Skip network fetch if we have valid cached settings
-    if (cached) {
-      setLoaded(true);
-      return;
-    }
-
+  // Fetch the public settings payload. Used both on initial mount and when
+  // an admin saves changes (via the exposed `refresh()` below) so their own
+  // tab picks up the change without a page reload.
+  const fetchSettings = () =>
     fetch(`${baseUrl}/settings/public`, { credentials: "include" })
       .then((r) => r.json())
       .then((d) => {
         if (d.success) {
           setSettings(d.settings);
           setCachedSettings(d.settings);
-          setActiveCurrencyState(detectCurrency(d.settings.currency.defaultDisplay));
+          setActiveCurrencyState((cur) =>
+            // Don't override an explicit user pick when the server default changes.
+            localStorage.getItem(STORAGE_KEY) ? cur : detectCurrency(d.settings.currency.defaultDisplay),
+          );
+          return d.settings;
         }
       })
       .catch(() => {
-        setActiveCurrencyState(detectCurrency("USD"));
-      })
-      .finally(() => setLoaded(true));
+        // Stay with whatever we have (cache or defaults).
+      });
+
+  useEffect(() => {
+    // Skip network fetch if we have valid cached settings
+    if (cached) {
+      setLoaded(true);
+      return;
+    }
+    fetchSettings().finally(() => setLoaded(true));
   }, []);
+
+  // Apply branding to <head> whenever settings change. Runs after both the
+  // initial cached render and any subsequent fetch. Safe to run on every
+  // settings update — DOM ops are idempotent.
+  useEffect(() => {
+    applyBranding(settings.store);
+  }, [settings.store?.name, settings.store?.faviconUrl]);
 
   const setActiveCurrency = (currency) => {
     if (currency !== "BDT" && currency !== "USD") return;
@@ -102,6 +153,12 @@ export const SettingsProvider = ({ children }) => {
       loaded,
       activeCurrency,
       setActiveCurrency,
+      // Re-fetch /settings/public after an admin save so the open tab sees
+      // the change without a full reload.
+      refresh: () => {
+        bustSettingsCache();
+        return fetchSettings();
+      },
       /**
        * Format a USD-priced product into the active display currency.
        */
@@ -140,6 +197,7 @@ export const useSettings = () => {
       loaded: false,
       activeCurrency: "USD",
       setActiveCurrency: () => {},
+      refresh: async () => {},
       formatPrice: (v) =>
         new Intl.NumberFormat("en-US", {
           style: "currency",

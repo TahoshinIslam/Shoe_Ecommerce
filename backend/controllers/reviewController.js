@@ -1,6 +1,7 @@
 import asyncHandler from "../middleware/asyncHandler.js";
 import Review from "../models/reviewModel.js";
 import Order from "../models/orderModel.js";
+import { createAdminNotification } from "../controllers/notificationController.js";
 
 // @desc    Get reviews for a product
 // @route   GET /api/reviews/product/:productId
@@ -38,7 +39,10 @@ export const listAllReviews = asyncHandler(async (req, res) => {
   if (rating) filter.rating = Number(rating);
   if (productId) filter.product = productId;
   if (search) {
-    const rx = new RegExp(String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const rx = new RegExp(
+      String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      "i",
+    );
     filter.$or = [{ comment: rx }, { title: rx }];
   }
 
@@ -76,7 +80,11 @@ export const replyToReview = asyncHandler(async (req, res) => {
   const trimmed = String(text || "").trim();
   if (!trimmed) {
     // Empty body removes the reply.
-    review.adminReply = { text: "", repliedBy: undefined, repliedAt: undefined };
+    review.adminReply = {
+      text: "",
+      repliedBy: undefined,
+      repliedAt: undefined,
+    };
   } else {
     review.adminReply = {
       text: trimmed,
@@ -119,6 +127,12 @@ export const createReview = asyncHandler(async (req, res) => {
       isVerifiedPurchase: true, // guaranteed true now since we blocked above
     });
     res.status(201).json({ success: true, review });
+
+    // Fire-and-forget admin notification
+    createAdminNotification({
+      message: `New ${review.rating}★ review received`,
+      url: `/admin/reviews`,
+    }).catch(() => {});
   } catch (err) {
     // Unique index on {user, product} throws E11000 on duplicate
     if (err.code === 11000) {

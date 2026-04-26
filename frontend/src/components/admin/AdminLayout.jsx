@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -14,30 +15,50 @@ import {
   Home,
   ChevronRight,
   Star,
+  Folder,
 } from "lucide-react";
 
 import { cn } from "../../lib/utils.js";
+import { selectCurrentUser } from "../../store/authSlice.js";
+import NotificationsDropdown from "./NotificationsDropdown.jsx";
 
+// Each item declares the permission it requires. `adminOnly: true` means
+// only the admin role can see it (employees with no equivalent permission).
 const NAV = [
-  { to: "/admin", label: "Overview", icon: LayoutDashboard, end: true },
-  { to: "/admin/products", label: "Products", icon: Package },
-  { to: "/admin/orders", label: "Orders", icon: ShoppingCart },
-  { to: "/admin/users", label: "Users", icon: Users },
-  { to: "/admin/coupons", label: "Coupons", icon: Tag },
-  { to: "/admin/reviews", label: "Reviews", icon: Star },
-  { to: "/admin/themes", label: "Themes", icon: Palette, highlight: true },
-  { to: "/admin/settings", label: "Settings", icon: Settings },
+  { to: "/admin", label: "Overview", icon: LayoutDashboard, end: true, perm: "readAnalytics" },
+  { to: "/admin/products", label: "Products", icon: Package, perm: "manageProducts" },
+  { to: "/admin/orders", label: "Orders", icon: ShoppingCart, perm: "readOrders" },
+  { to: "/admin/users", label: "Users", icon: Users, adminOnly: true },
+  { to: "/admin/categories", label: "Categories", icon: Folder, perm: "manageCategories" },
+  { to: "/admin/coupons", label: "Coupons", icon: Tag, perm: "manageCoupons" },
+  { to: "/admin/reviews", label: "Reviews", icon: Star, perm: "readReviews" },
+  { to: "/admin/themes", label: "Themes", icon: Palette, highlight: true, perm: "manageThemes" },
+  { to: "/admin/settings", label: "Settings", icon: Settings, perm: "manageSettings" },
 ];
+
+const filterNav = (user) => {
+  if (!user) return [];
+  if (user.role === "admin") return NAV;
+  if (user.role === "employee") {
+    const perms = user.permissions || [];
+    return NAV.filter(
+      (item) => !item.adminOnly && item.perm && perms.includes(item.perm),
+    );
+  }
+  return [];
+};
 
 export default function AdminLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
+  const user = useSelector(selectCurrentUser);
+  const navItems = filterNav(user);
 
   return (
     <div className="flex min-h-[calc(100vh-64px)] bg-muted/20">
       {/* Desktop sidebar */}
       <aside className="hidden w-64 flex-shrink-0 border-r border-border bg-background lg:block">
-        <SidebarContent />
+        <SidebarContent items={navItems} />
       </aside>
 
       {/* Mobile sidebar */}
@@ -67,7 +88,7 @@ export default function AdminLayout() {
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              <SidebarContent onNavigate={() => setMobileOpen(false)} />
+              <SidebarContent items={navItems} onNavigate={() => setMobileOpen(false)} />
             </motion.aside>
           </>
         )}
@@ -75,16 +96,21 @@ export default function AdminLayout() {
 
       {/* Main content */}
       <main className="flex-1 overflow-hidden">
-        {/* Top bar (mobile only) */}
-        <div className="sticky top-16 z-20 flex items-center gap-3 border-b border-border bg-background px-4 py-3 lg:hidden">
+        {/* Top bar */}
+        <div className="sticky top-16 z-20 flex items-center gap-3 border-b border-border bg-background px-4 py-3">
           <button
             onClick={() => setMobileOpen(true)}
-            className="rounded p-1 hover:bg-muted"
+            className="rounded p-1 hover:bg-muted lg:hidden"
             aria-label="Menu"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <Breadcrumb />
+          <div className="flex-1 lg:hidden">
+            <Breadcrumb />
+          </div>
+          <div className="ml-auto">
+            <NotificationsDropdown />
+          </div>
         </div>
 
         <motion.div
@@ -101,7 +127,7 @@ export default function AdminLayout() {
   );
 }
 
-function SidebarContent({ onNavigate }) {
+function SidebarContent({ items, onNavigate }) {
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-border p-5">
@@ -114,7 +140,7 @@ function SidebarContent({ onNavigate }) {
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
-        {NAV.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink

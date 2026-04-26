@@ -21,7 +21,12 @@ import rawProducts from "./data/products.js";
 dotenv.config();
 
 // ---- Helpers ----
-const slugify = (s) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const slugify = (s) =>
+  s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 
 // ---- Seed data ----
 const brandsSeed = [
@@ -155,16 +160,28 @@ const importData = async () => {
 
     console.log("📂 Creating categories...");
     const categories = await Category.create(
-      categoriesSeed.map((c) => ({ ...c, slug: slugify(c.name) })),
+      categoriesSeed.map((c) => ({
+        ...c,
+        slug: slugify(c.name),
+        isUserGenerated: false,
+      })),
     );
-    const categoryByName = Object.fromEntries(categories.map((c) => [c.name, c]));
+    const categoryByName = Object.fromEntries(
+      categories.map((c) => [c.name, c]),
+    );
     console.log(`   ✓ ${categories.length} categories`);
 
     console.log("👟 Creating products...");
     // Map raw products → schema-shaped docs
     // Existing data has brand:"Nike" / category:"Shoes" (string)
     // We'll rotate through categories so we get a variety of products
-    const catNames = ["Running", "Sneakers", "Lifestyle", "Training", "Basketball"];
+    const catNames = [
+      "Running",
+      "Sneakers",
+      "Lifestyle",
+      "Training",
+      "Basketball",
+    ];
     const productDocs = rawProducts.map((p, idx) => {
       // Find matching brand, fallback to Nike
       const brand = brandByName[p.brand] || brandByName["Nike"];
@@ -210,7 +227,9 @@ const importData = async () => {
     console.log("\n✅ Data imported successfully!\n");
     console.log("   Admin login:    admin@shoestore.com / Admin@12345");
     console.log("   Customer login: tahoshin@example.com / Tahoshin@123");
-    console.log("   Coupons:        WELCOME10 (10% off, min $50) | FREESHIP ($10 off, min $80)\n");
+    console.log(
+      "   Coupons:        WELCOME10 (10% off, min $50) | FREESHIP ($10 off, min $80)\n",
+    );
     process.exit(0);
   } catch (err) {
     console.error("❌ Seed error:", err);

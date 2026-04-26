@@ -19,9 +19,10 @@ import toast from "react-hot-toast";
 
 import { cn } from "../../lib/utils.js";
 import { useTheme } from "../../contexts/ThemeProvider.jsx";
+import { useSettings } from "../../contexts/SettingsContext.jsx";
 import {
   selectCurrentUser,
-  selectIsAdmin,
+  selectCanAccessAdmin,
   clearCredentials,
 } from "../../store/authSlice.js";
 import { useLogoutMutation } from "../../store/userApi.js";
@@ -44,8 +45,9 @@ const navLinks = [
 
 export default function Header() {
   const { theme, isDark, toggleDark } = useTheme();
+  const settings = useSettings();
   const user = useSelector(selectCurrentUser);
-  const isAdmin = useSelector(selectIsAdmin);
+  const isAdmin = useSelector(selectCanAccessAdmin);
   const cartOpen = useSelector((s) => s.ui.cartOpen);
   const mobileMenuOpen = useSelector((s) => s.ui.mobileMenuOpen);
   const dispatch = useDispatch();
@@ -53,6 +55,14 @@ export default function Header() {
   const [logout] = useLogoutMutation();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+
+  // Branding: settings.store wins over theme for shop name/logo. Theme is
+  // the legacy fallback so existing setups don't lose their branding while
+  // an admin migrates to the new Settings page.
+  const shopName = settings?.store?.name || theme?.siteName || "TAHO";
+  const logoUrl = settings?.store?.logoUrl || theme?.logoUrl || "";
+  const logoDarkUrl =
+    settings?.store?.logoDarkUrl || theme?.logoDarkUrl || "";
 
   // Only fetch cart/wishlist when signed in
   const { data: cartData } = useGetCartQuery(undefined, { skip: !user });
@@ -105,15 +115,15 @@ export default function Header() {
 
           {/* Logo */}
           <Link to="/" className="flex min-w-0 items-center gap-2 focus-ring rounded-md flex-shrink-0">
-            {theme?.logoUrl ? (
+            {logoUrl ? (
               <img
-                src={isDark && theme.logoDarkUrl ? theme.logoDarkUrl : theme.logoUrl}
-                alt={theme.siteName}
+                src={isDark && logoDarkUrl ? logoDarkUrl : logoUrl}
+                alt={shopName}
                 className="h-8 w-auto"
               />
             ) : (
               <span className="font-heading text-xl font-black tracking-tight">
-                {theme?.siteName || "ShoeStore"}
+                {shopName}
                 <span className="text-accent">.</span>
               </span>
             )}

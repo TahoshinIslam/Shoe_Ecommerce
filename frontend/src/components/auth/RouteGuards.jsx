@@ -1,6 +1,9 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { selectCurrentUser, selectIsAdmin } from "../../store/authSlice.js";
+import {
+  selectCurrentUser,
+  selectCanAccessAdmin,
+} from "../../store/authSlice.js";
 
 export function PrivateRoute() {
   const user = useSelector(selectCurrentUser);
@@ -13,8 +16,8 @@ export function PrivateRoute() {
 
 export function AdminRoute() {
   const user = useSelector(selectCurrentUser);
-  const isAdmin = useSelector(selectIsAdmin);
+  const canAccess = useSelector(selectCanAccessAdmin);
   if (!user) return <Navigate to="/login" replace />;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!canAccess) return <Navigate to="/" replace />;
   return <Outlet />;
 }

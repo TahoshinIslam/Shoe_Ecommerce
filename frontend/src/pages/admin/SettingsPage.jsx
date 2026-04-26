@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Save, Plus, Trash2, Gift } from "lucide-react";
+import { Save, Plus, Trash2, Gift, Image as ImageIcon, Upload, X } from "lucide-react";
+import { useSettings } from "../../contexts/SettingsContext.jsx";
 
 const baseUrl = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL}/api`
@@ -13,6 +14,28 @@ const getCsrfToken = async () => {
   const d = await r.json();
   csrfToken = d.csrfToken;
   return csrfToken;
+};
+
+// Upload a single image file via the existing /api/upload endpoint and
+// return the resulting Cloudinary URL. We POST FormData so multer sees it.
+const uploadImage = async (file, folder = "branding") => {
+  const token = await getCsrfToken();
+  const fd = new FormData();
+  fd.append("image", file);
+  const res = await fetch(
+    `${baseUrl}/upload?folder=${encodeURIComponent(folder)}`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-CSRF-Token": token },
+      body: fd,
+    },
+  );
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || "Upload failed");
+  }
+  return data.url;
 };
 
 const Section = ({ title, children, action }) => (
@@ -62,9 +85,90 @@ const Toggle = ({ checked, onChange, label, help }) => (
   </label>
 );
 
+/**
+ * Reusable image picker. Shows a preview of the current URL, lets the
+ * admin paste a URL OR upload a file. The "uploading" state is local so
+ * each picker spins independently when fired in parallel.
+ */
+const ImagePicker = ({ value, onChange, label, help, accept = "image/*" }) => {
+  const inputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadImage(file, "branding");
+      onChange(url);
+      toast.success(`${label} uploaded`);
+    } catch (err) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+      // Reset so the same file can be re-picked if needed
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  return (
+    <Field label={label} help={help}>
+      <div className="flex items-start gap-3">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded border border-border bg-background">
+          {value ? (
+            <img
+              src={value}
+              alt={label}
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            <ImageIcon className="h-6 w-6 text-muted-foreground" />
+          )}
+        </div>
+        <div className="flex-1 space-y-2">
+          <Input
+            type="text"
+            placeholder="https://… (or upload)"
+            value={value || ""}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          <div className="flex items-center gap-2">
+            <input
+              ref={inputRef}
+              type="file"
+              accept={accept}
+              onChange={handleFile}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              disabled={uploading}
+              className="inline-flex items-center gap-1 rounded border border-border px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-50"
+            >
+              <Upload size={12} />
+              {uploading ? "Uploading…" : "Upload"}
+            </button>
+            {value && (
+              <button
+                type="button"
+                onClick={() => onChange("")}
+                className="inline-flex items-center gap-1 rounded border border-border px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
+              >
+                <X size={12} /> Clear
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </Field>
+  );
+};
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState(null);
   const [saving, setSaving] = useState(false);
+  const { refresh: refreshPublicSettings } = useSettings();
 
   useEffect(() => {
     fetch(`${baseUrl}/settings`, { credentials: "include" })
@@ -154,6 +258,10 @@ export default function SettingsPage() {
       if (d.success) {
         toast.success("Settings saved");
         setSettings(d.settings);
+        // Re-fetch /settings/public so this admin's open tabs (header,
+        // footer, favicon) update immediately. Other browsers will pick
+        // up the change within the SettingsContext cache TTL (5 min).
+        refreshPublicSettings?.();
       } else {
         toast.error(d.message || "Save failed");
       }
@@ -179,7 +287,10 @@ export default function SettingsPage() {
       </div>
 
       <Section title="Store info">
-        <Field label="Store name">
+        <Field
+          label="Store name"
+          help="Shown in the header, footer, and browser tab title."
+        >
           <Input
             value={settings.store.name}
             onChange={(e) => update("store.name", e.target.value)}
@@ -198,6 +309,28 @@ export default function SettingsPage() {
             onChange={(e) => update("store.supportPhone", e.target.value)}
           />
         </Field>
+      </Section>
+
+      <Section title="Branding">
+        <ImagePicker
+          label="Logo"
+          help="Shown in the site header. Recommended ~200×60px PNG/SVG."
+          value={settings.store.logoUrl}
+          onChange={(v) => update("store.logoUrl", v)}
+        />
+        <ImagePicker
+          label="Logo (dark mode)"
+          help="Optional. Used when the site is in dark mode. Falls back to the regular logo if blank."
+          value={settings.store.logoDarkUrl}
+          onChange={(v) => update("store.logoDarkUrl", v)}
+        />
+        <ImagePicker
+          label="Favicon"
+          help="Shown in browser tabs and bookmarks. Recommended 32×32 or 64×64 PNG/ICO."
+          value={settings.store.faviconUrl}
+          onChange={(v) => update("store.faviconUrl", v)}
+          accept="image/png,image/x-icon,image/svg+xml,image/jpeg,image/webp"
+        />
       </Section>
 
       <Section title="Currency">
@@ -240,7 +373,7 @@ export default function SettingsPage() {
           checked={settings.promotions?.firstOrderFreeShipping}
           onChange={(v) => update("promotions.firstOrderFreeShipping", v)}
           label="Free shipping on first order"
-          help="When a customer places their very first order, shipping is automatically waived. Doesn't apply to repeat orders."
+          help="When a customer places their very first order, shipping is automatically waived. Once used, the benefit cannot be reclaimed (even by cancelling and reordering)."
         />
       </Section>
 

@@ -1,5 +1,6 @@
 import asyncHandler from "../middleware/asyncHandler.js";
 import Category from "../models/categoryModel.js";
+import Product from "../models/productModel.js";
 
 export const getCategories = asyncHandler(async (req, res) => {
   const categories = await Category.find().sort("name");
@@ -33,10 +34,20 @@ export const updateCategory = asyncHandler(async (req, res) => {
 });
 
 export const deleteCategory = asyncHandler(async (req, res) => {
-  const category = await Category.findByIdAndDelete(req.params.id);
+  const category = await Category.findById(req.params.id);
   if (!category) {
     res.status(404);
     throw new Error("Category not found");
   }
+  const productCount = await Product.countDocuments({
+    category: req.params.id,
+  });
+  if (productCount > 0) {
+    res.status(400);
+    throw new Error(
+      `Cannot delete: ${productCount} product${productCount > 1 ? "s" : ""} use this category. Reassign them first.`,
+    );
+  }
+  await category.deleteOne();
   res.json({ success: true, message: "Category deleted" });
 });
