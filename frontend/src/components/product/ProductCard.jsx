@@ -50,6 +50,7 @@ export default function ProductCard({ product, className, index = 0 }) {
 
   return (
     <motion.article
+      id={`product-${product._id}`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.04, ease: "easeOut" }}

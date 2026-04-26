@@ -2,15 +2,20 @@ import express from "express";
 import { body } from "express-validator";
 import {
   getProductReviews,
+  listAllReviews,
   createReview,
   updateReview,
   deleteReview,
   markHelpful,
+  replyToReview,
 } from "../controllers/reviewController.js";
-import { protect } from "../middleware/authMiddleware.js";
+import { protect, admin } from "../middleware/authMiddleware.js";
 import { validate } from "../middleware/validator.js";
 
 const router = express.Router();
+
+// Admin-wide listing (must come before /:id-style routes)
+router.get("/", protect, admin, listAllReviews);
 
 router.get("/product/:productId", getProductReviews);
 
@@ -29,5 +34,6 @@ router.post(
 router.put("/:id", protect, updateReview);
 router.delete("/:id", protect, deleteReview);
 router.post("/:id/helpful", protect, markHelpful);
+router.post("/:id/reply", protect, admin, replyToReview);
 
 export default router;

@@ -12,6 +12,7 @@ export const getProductReviews = asyncHandler(async (req, res) => {
   const [reviews, total] = await Promise.all([
     Review.find(filter)
       .populate("user", "name avatar")
+      .populate("adminReply.repliedBy", "name")
       .sort("-createdAt")
       .skip(skip)
       .limit(Number(limit)),
@@ -25,6 +26,68 @@ export const getProductReviews = asyncHandler(async (req, res) => {
     count: reviews.length,
     reviews,
   });
+});
+
+// @desc    List ALL reviews (admin) with filters
+// @route   GET /api/reviews
+// @access  Private/Admin
+export const listAllReviews = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, rating, productId, search } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+  const filter = {};
+  if (rating) filter.rating = Number(rating);
+  if (productId) filter.product = productId;
+  if (search) {
+    const rx = new RegExp(String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = [{ comment: rx }, { title: rx }];
+  }
+
+  const [reviews, total] = await Promise.all([
+    Review.find(filter)
+      .populate("user", "name email avatar")
+      .populate("product", "name images slug")
+      .populate("adminReply.repliedBy", "name")
+      .sort("-createdAt")
+      .skip(skip)
+      .limit(Number(limit)),
+    Review.countDocuments(filter),
+  ]);
+
+  res.json({
+    success: true,
+    total,
+    page: Number(page),
+    pages: Math.ceil(total / Number(limit)) || 1,
+    count: reviews.length,
+    reviews,
+  });
+});
+
+// @desc    Admin reply (create/update) on a review
+// @route   POST /api/reviews/:id/reply
+// @access  Private/Admin
+export const replyToReview = asyncHandler(async (req, res) => {
+  const { text } = req.body;
+  const review = await Review.findById(req.params.id);
+  if (!review) {
+    res.status(404);
+    throw new Error("Review not found");
+  }
+  const trimmed = String(text || "").trim();
+  if (!trimmed) {
+    // Empty body removes the reply.
+    review.adminReply = { text: "", repliedBy: undefined, repliedAt: undefined };
+  } else {
+    review.adminReply = {
+      text: trimmed,
+      repliedBy: req.user._id,
+      repliedAt: new Date(),
+    };
+  }
+  await review.save();
+  await review.populate("user", "name avatar");
+  await review.populate("adminReply.repliedBy", "name");
+  res.json({ success: true, review });
 });
 
 // @desc    Create review — only if user has a DELIVERED order for this product
@@ -66,7 +129,7 @@ export const createReview = asyncHandler(async (req, res) => {
   }
 });
 
-// @desc    Update my review
+// @desc    Update review (owner can edit own; admin can edit any)
 // @route   PUT /api/reviews/:id
 // @access  Private
 export const updateReview = asyncHandler(async (req, res) => {
@@ -75,7 +138,9 @@ export const updateReview = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Review not found");
   }
-  if (review.user.toString() !== req.user._id.toString()) {
+  const isOwner = review.user.toString() === req.user._id.toString();
+  const isAdmin = req.user.role === "admin";
+  if (!isOwner && !isAdmin) {
     res.status(403);
     throw new Error("Not authorized");
   }

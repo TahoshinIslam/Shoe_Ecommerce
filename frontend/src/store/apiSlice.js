@@ -77,6 +77,10 @@ const baseQueryWithCsrf = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery: baseQueryWithCsrf,
+  // Keep cached data longer to reduce redundant requests during navigation
+  keepUnusedDataFor: 300, // 5 minutes (default is 60s)
+  refetchOnMountOrArgChange: false,
+  refetchOnReconnect: true,
   tagTypes: [
     "User",
     "Product",

@@ -19,6 +19,7 @@ import Badge from "../components/ui/Badge.jsx";
 import Button from "../components/ui/Button.jsx";
 import ConfirmDialog from "../components/ui/ConfirmDialog.jsx";
 import Skeleton from "../components/ui/Skeleton.jsx";
+import ReviewForm from "../components/review/ReviewForm.jsx";
 
 import {
   useGetOrderQuery,
@@ -74,10 +75,9 @@ export default function OrderDetailPage() {
     );
   }
 
-  // Currency the order was placed in. Falls back to USD for old orders that
-  // pre-date the currency field migration.
   const currency = order.currency || "USD";
   const isFreeShippingPromo = /first order free/i.test(order.shippingTier || "");
+  const isDelivered = order.status === "delivered";
 
   const currentIdx = statusIndex(order.status);
   const isCancelled = order.status === "cancelled";
@@ -212,23 +212,32 @@ export default function OrderDetailPage() {
           <Card title="Items" icon={Package}>
             <ul className="divide-y divide-border">
               {order.items.map((it, i) => (
-                <li key={i} className="flex gap-4 py-4 first:pt-0 last:pb-0">
-                  <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-md bg-muted">
-                    <img
-                      src={it.image}
-                      alt={it.name}
-                      className="h-full w-full object-cover"
-                    />
+                <li key={i} className="py-4 first:pt-0 last:pb-0">
+                  <div className="flex gap-4">
+                    <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-md bg-muted">
+                      <img
+                        src={it.image}
+                        alt={it.name}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-semibold">{it.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Size {it.size} · Qty {it.quantity}
+                      </p>
+                      <p className="mt-1 text-sm font-bold">
+                        {formatCurrency(it.price * it.quantity, currency)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="font-semibold">{it.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Size {it.size} · Qty {it.quantity}
-                    </p>
-                    <p className="mt-1 text-sm font-bold">
-                      {formatCurrency(it.price * it.quantity, currency)}
-                    </p>
-                  </div>
+                  {/* Review form — only shown when order is delivered.
+                      The backend enforces this as a hard gate too. */}
+                  {isDelivered && it.product && (
+                    <div className="mt-3 ml-24">
+                      <ReviewForm productId={it.product} productName={it.name} />
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -277,7 +286,6 @@ export default function OrderDetailPage() {
           )}
         </div>
 
-        {/* Totals */}
         <div className="rounded-lg border border-border bg-muted/20 p-5 lg:sticky lg:top-24 lg:self-start">
           <h2 className="mb-4 font-heading text-lg font-bold">Total</h2>
           <div className="space-y-2 text-sm">

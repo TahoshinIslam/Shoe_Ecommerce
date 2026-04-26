@@ -66,8 +66,8 @@ export default function AdminOrdersPage() {
       ) : orders.length === 0 ? (
         <EmptyState icon={ShoppingCart} title="No orders" />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border border-border bg-background">
+          <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="p-3 text-left">Order</th>

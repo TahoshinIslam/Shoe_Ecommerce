@@ -13,6 +13,7 @@ import {
   X,
   Home,
   ChevronRight,
+  Star,
 } from "lucide-react";
 
 import { cn } from "../../lib/utils.js";
@@ -23,6 +24,7 @@ const NAV = [
   { to: "/admin/orders", label: "Orders", icon: ShoppingCart },
   { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/coupons", label: "Coupons", icon: Tag },
+  { to: "/admin/reviews", label: "Reviews", icon: Star },
   { to: "/admin/themes", label: "Themes", icon: Palette, highlight: true },
   { to: "/admin/settings", label: "Settings", icon: Settings },
 ];

@@ -39,52 +39,36 @@ const hexToRgbTriplet = (input) => {
   return `${r} ${g} ${b}`;
 };
 
-const applyColors = (colors, prefix) => {
-  if (!colors) return;
-  const root = document.documentElement;
-  const map = {
-    primary: "--color-primary",
-    primaryForeground: "--color-primary-foreground",
-    accent: "--color-accent",
-    accentForeground: "--color-accent-foreground",
-    background: "--color-background",
-    foreground: "--color-foreground",
-    muted: "--color-muted",
-    mutedForeground: "--color-muted-foreground",
-    border: "--color-border",
-    success: "--color-success",
-    warning: "--color-warning",
-    danger: "--color-danger",
-  };
-  for (const [key, cssVar] of Object.entries(map)) {
-    const value = hexToRgbTriplet(colors[key]);
-    if (!value) continue;
-    if (prefix === "dark") {
-      // store on a helper style element so toggling .dark works even for
-      // tokens we set dynamically — see the darkStyleTag below
-      darkTokens[cssVar] = value;
-    } else {
-      root.style.setProperty(cssVar, value);
-    }
-  }
-  if (prefix === "dark") writeDarkStyles();
+const COLOR_MAP = {
+  primary: "--color-primary",
+  primaryForeground: "--color-primary-foreground",
+  accent: "--color-accent",
+  accentForeground: "--color-accent-foreground",
+  background: "--color-background",
+  foreground: "--color-foreground",
+  muted: "--color-muted",
+  mutedForeground: "--color-muted-foreground",
+  border: "--color-border",
+  success: "--color-success",
+  warning: "--color-warning",
+  danger: "--color-danger",
 };
 
-// The .dark selector needs to override :root, but we can't set .dark styles via
-// the style="..." attribute. So we manage them in a <style> tag we own.
-const darkTokens = {};
-const DARK_STYLE_ID = "theme-dark-tokens";
-const writeDarkStyles = () => {
-  let tag = document.getElementById(DARK_STYLE_ID);
-  if (!tag) {
-    tag = document.createElement("style");
-    tag.id = DARK_STYLE_ID;
-    document.head.appendChild(tag);
+// Inline styles on :root have higher specificity than `.dark { ... }` class
+// rules, so we cannot pre-set both palettes and rely on the class to swap them.
+// Instead, write whichever palette matches the current mode directly to :root,
+// and clear values not present in the active palette so the stylesheet
+// fallbacks (in index.css) kick in for missing keys.
+const applyColors = (colors) => {
+  const root = document.documentElement;
+  for (const [key, cssVar] of Object.entries(COLOR_MAP)) {
+    const value = colors ? hexToRgbTriplet(colors[key]) : null;
+    if (value) {
+      root.style.setProperty(cssVar, value);
+    } else {
+      root.style.removeProperty(cssVar);
+    }
   }
-  const decls = Object.entries(darkTokens)
-    .map(([k, v]) => `${k}: ${v};`)
-    .join("");
-  tag.textContent = `.dark{${decls}}`;
 };
 
 const ThemeContext = createContext({
@@ -109,32 +93,35 @@ export default function ThemeProvider({ children }) {
     return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
   });
 
-  // Apply theme tokens when the theme data arrives
+  // Apply theme tokens whenever the theme or dark-mode state changes
   useEffect(() => {
-    if (!theme) return;
     const root = document.documentElement;
 
-    applyColors(theme.colors, "light");
-    applyColors(theme.darkColors, "dark");
+    if (theme) {
+      applyColors(isDark ? theme.darkColors : theme.colors);
 
-    if (theme.radius) root.style.setProperty("--radius", theme.radius);
-    if (theme.fonts?.heading) root.style.setProperty("--font-heading", theme.fonts.heading);
-    if (theme.fonts?.body) root.style.setProperty("--font-body", theme.fonts.body);
+      if (theme.radius) root.style.setProperty("--radius", theme.radius);
+      if (theme.fonts?.heading) root.style.setProperty("--font-heading", theme.fonts.heading);
+      if (theme.fonts?.body) root.style.setProperty("--font-body", theme.fonts.body);
 
-    // Favicon + title
-    if (theme.siteName) document.title = theme.siteName;
-    if (theme.faviconUrl) {
-      let link = document.querySelector("link[rel='icon']");
-      if (!link) {
-        link = document.createElement("link");
-        link.rel = "icon";
-        document.head.appendChild(link);
+      if (theme.siteName) document.title = theme.siteName;
+      if (theme.faviconUrl) {
+        let link = document.querySelector("link[rel='icon']");
+        if (!link) {
+          link = document.createElement("link");
+          link.rel = "icon";
+          document.head.appendChild(link);
+        }
+        link.href = theme.faviconUrl;
       }
-      link.href = theme.faviconUrl;
+    } else {
+      // No theme data — clear any previously-set inline colors so the
+      // :root / .dark fallbacks in index.css apply.
+      applyColors(null);
     }
-  }, [theme]);
+  }, [theme, isDark]);
 
-  // Toggle dark mode
+  // Toggle dark mode class + persist
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
     localStorage.setItem("ss:dark", isDark ? "1" : "0");

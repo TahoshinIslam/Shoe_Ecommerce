@@ -106,8 +106,8 @@ export default function AdminProductsPage() {
       ) : products.length === 0 ? (
         <EmptyState icon={Package} title="No products" message="Create your first product." />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border border-border bg-background">
+          <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="p-3 text-left">Product</th>
@@ -121,8 +121,22 @@ export default function AdminProductsPage() {
             <tbody className="divide-y divide-border">
               {products.map((p) => {
                 const totalStock = p.sizes?.reduce((s, v) => s + v.stock, 0) || 0;
+                // Critical low (0–4) → red row, low (5–10) → yellow row,
+                // healthy → no tint. Helps admins spot restock priorities.
+                const stockTone =
+                  totalStock <= 4
+                    ? "bg-danger/10 hover:bg-danger/15"
+                    : totalStock <= 10
+                    ? "bg-warning/10 hover:bg-warning/15"
+                    : "hover:bg-muted/20";
+                const stockTextTone =
+                  totalStock <= 4
+                    ? "text-danger"
+                    : totalStock <= 10
+                    ? "text-warning"
+                    : "text-foreground";
                 return (
-                  <tr key={p._id} className="hover:bg-muted/20">
+                  <tr key={p._id} className={cn("transition-colors", stockTone)}>
                     <td className="p-3">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-md bg-muted">
@@ -137,7 +151,7 @@ export default function AdminProductsPage() {
                     <td className="hidden p-3 text-muted-foreground md:table-cell">{p.brand?.name || "—"}</td>
                     <td className="p-3 text-right font-bold">{formatCurrency(p.basePrice)}</td>
                     <td className="hidden p-3 text-center sm:table-cell">
-                      <span className={cn("text-sm font-semibold", totalStock === 0 && "text-danger")}>
+                      <span className={cn("text-sm font-semibold", stockTextTone)}>
                         {totalStock}
                       </span>
                     </td>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { SlidersHorizontal, X, AlertCircle } from "lucide-react";
 
@@ -19,10 +19,35 @@ const SORTS = [
 ];
 
 const GENDERS = ["men", "women", "kids", "unisex"];
+const PAGE_SIZE = 12;
+
+const computeTitle = (sp) => {
+  if (sp.get("featured") === "true") return "Featured picks";
+  const search = sp.get("search");
+  if (search) return `Results for "${search}"`;
+  const onlySort = sp.get("sort") === "-createdAt";
+  const noOtherFilters = !sp.get("gender") && !sp.get("brand") && !sp.get("category") && !sp.get("priceMin") && !sp.get("priceMax");
+  if (onlySort && noOtherFilters) return "Fresh arrivals";
+  const gender = sp.get("gender");
+  if (gender) return `${gender.charAt(0).toUpperCase()}${gender.slice(1)}'s shoes`;
+  return "Shop all shoes";
+};
 
 export default function ShopPage() {
   const [sp, setSp] = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Reset visible count when filters/sort change (anything except `limit` itself)
+  const filterKey = useMemo(() => {
+    const next = new URLSearchParams(sp);
+    next.delete("limit");
+    return next.toString();
+  }, [sp]);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [filterKey]);
 
   const query = useMemo(() => {
     const o = {};
@@ -31,13 +56,15 @@ export default function ShopPage() {
         o.basePrice = { ...(o.basePrice || {}), gte: v };
       } else if (k === "priceMax") {
         o.basePrice = { ...(o.basePrice || {}), lte: v };
+      } else if (k === "page") {
+        // ignore — using show-more instead of pagination
       } else {
         o[k] = v;
       }
     }
-    if (!o.limit) o.limit = 12;
+    o.limit = visibleCount;
     return o;
-  }, [sp]);
+  }, [sp, visibleCount]);
 
   const { data, isLoading, isFetching, isError, error } = useGetProductsQuery(query);
   const { data: brandsData } = useGetBrandsQuery();
@@ -56,14 +83,14 @@ export default function ShopPage() {
   // Defensive: use empty array if data is undefined
   const products = data?.products ?? [];
   const total = data?.total ?? 0;
-  const page = Number(sp.get("page")) || 1;
-  const totalPages = data?.pages || 1;
+  const hasMore = products.length < total;
+  const title = computeTitle(sp);
 
   return (
     <div className="container-x py-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-3xl font-bold">Shop all shoes</h1>
+          <h1 className="font-heading text-3xl font-bold">{title}</h1>
           <p className="text-sm text-muted-foreground">
             {total} products
           </p>
@@ -213,27 +240,18 @@ export default function ShopPage() {
                 ))}
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="mt-10 flex items-center justify-center gap-2">
+              {/* Show more */}
+              {hasMore && (
+                <div className="mt-10 flex flex-col items-center gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    Showing {products.length} of {total}
+                  </p>
                   <Button
                     variant="outline"
-                    size="sm"
-                    disabled={page <= 1}
-                    onClick={() => setParam("page", String(page - 1))}
+                    disabled={isFetching}
+                    onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
                   >
-                    Prev
-                  </Button>
-                  <span className="px-4 text-sm">
-                    Page {page} of {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page >= totalPages}
-                    onClick={() => setParam("page", String(page + 1))}
-                  >
-                    Next
+                    {isFetching ? "Loading..." : "Show more"}
                   </Button>
                 </div>
               )}

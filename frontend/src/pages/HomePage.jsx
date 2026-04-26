@@ -20,7 +20,7 @@ export default function HomePage() {
     data: newest,
     isLoading: loadingNewest,
     isError: newestError,
-  } = useGetProductsQuery({ limit: 8, sort: "-createdAt" });
+  } = useGetProductsQuery({ limit: 9, sort: "-createdAt" });
 
   // Defensive: default to empty arrays so rendering never blows up
   const featuredProducts = featured?.products ?? [];
@@ -171,15 +171,15 @@ export default function HomePage() {
             </div>
             <Link
               to="/shop?featured=true"
-              className="hidden text-sm font-semibold text-accent hover:underline sm:inline-flex"
+              className="text-sm font-semibold text-accent hover:underline whitespace-nowrap"
             >
               View all →
             </Link>
           </motion.div>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
             {loadingFeatured
-              ? Array.from({ length: 4 }).map((_, i) => <ProductCardSkeleton key={i} />)
-              : featuredProducts.slice(0, 8).map((p, i) => (
+              ? Array.from({ length: 6 }).map((_, i) => <ProductCardSkeleton key={i} />)
+              : featuredProducts.slice(0, 9).map((p, i) => (
                   <ProductCard key={p._id} product={p} index={i} />
                 ))}
           </div>
@@ -196,15 +196,15 @@ export default function HomePage() {
             </div>
             <Link
               to="/shop?sort=-createdAt"
-              className="hidden text-sm font-semibold text-accent hover:underline sm:inline-flex"
+              className="text-sm font-semibold text-accent hover:underline whitespace-nowrap"
             >
               View all →
             </Link>
           </motion.div>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
             {loadingNewest
-              ? Array.from({ length: 4 }).map((_, i) => <ProductCardSkeleton key={i} />)
-              : newestProducts.slice(0, 8).map((p, i) => (
+              ? Array.from({ length: 6 }).map((_, i) => <ProductCardSkeleton key={i} />)
+              : newestProducts.slice(0, 9).map((p, i) => (
                   <ProductCard key={p._id} product={p} index={i} />
                 ))}
           </div>

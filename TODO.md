@@ -1,20 +1,8 @@
-# Fix Failing Tests - COMPLETED
+# Fix Horizontal Scrollbar & Icon Cut-off on Small Screens
 
-## Root Causes
+## Steps
 
-1. **CSRF + Auth logout tests fail with 500**: `errorMiddleware.js` detached pino method from `this` context → logger crashed → Express returns 500
-2. **Auth logout test missing CSRF token**: Logout is a POST request that needs CSRF token
-3. **Payment tests fail with ValidationError**: `payments.test.js` used `addressLine1` but Order schema requires `street`
-4. **Payment amount mismatch test fails**: Controller didn't return `{ note: "amount mismatch" }` early
-
-## Fixes Applied
-
-- [x] `backend/middleware/errorMiddleware.js` - Fixed logger crash by calling `logger.error()`/`logger.warn()` directly instead of via detached variable
-- [x] `backend/tests/auth.test.js` - Added CSRF token to logout request via `getCsrfPair`
-- [x] `backend/tests/payments.test.js` - Changed `addressLine1` to `street` in `createPendingOrder`
-- [x] `backend/controllers/paymentController.js` - Added early return with `{ note: "amount mismatch" }` when Stripe amount doesn't match
-- [x] Removed temporary `backend/tests/csrf_debug.test.js` debug file
-
-## Result
-
-All 29 tests pass across 6 test files.
+- [x] 1. Update `frontend/src/components/layout/Header.jsx` — add flex-shrink controls, min-w-0, overflow-hidden, and hide non-essential icons on very small screens.
+- [x] 2. Update `frontend/src/components/layout/CurrencySwitcher.jsx` — add flex-shrink-0 to prevent squishing.
+- [x] 3. Update `frontend/src/index.css` — add global overflow-x-hidden to body/#root as safety net.
+- [ ] 4. Verify in Chrome DevTools at 320px–375px widths.

@@ -11,12 +11,12 @@ export default function CurrencySwitcher({ className = "" }) {
   const label = activeCurrency === "BDT" ? "৳ BDT" : "$ USD";
 
   return (
-    <button
+      <button
       onClick={() => setActiveCurrency(next)}
       aria-label={`Switch currency to ${next}`}
       title={`Switch to ${next}`}
       className={
-        "rounded-md px-2 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-muted focus-ring " +
+        "rounded-md px-2 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-muted focus-ring whitespace-nowrap flex-shrink-0 " +
         className
       }
     >

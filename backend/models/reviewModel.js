@@ -41,6 +41,11 @@ const reviewSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    adminReply: {
+      text: { type: String, trim: true, default: "" },
+      repliedBy: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+      repliedAt: { type: Date },
+    },
   },
   { timestamps: true },
 );

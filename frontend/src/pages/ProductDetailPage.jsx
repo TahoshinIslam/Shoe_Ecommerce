@@ -19,6 +19,7 @@ import Badge from "../components/ui/Badge.jsx";
 import Rating from "../components/ui/Rating.jsx";
 import Skeleton from "../components/ui/Skeleton.jsx";
 import ProductCard from "../components/product/ProductCard.jsx";
+import ReviewList from "../components/review/ReviewList.jsx";
 
 import {
   useGetProductQuery,
@@ -308,6 +309,33 @@ export default function ProductDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Reviews */}
+      <section className="mt-16">
+        <div className="mb-6 flex items-end justify-between">
+          <div>
+            <h2 className="font-heading text-2xl font-bold">
+              Customer reviews
+            </h2>
+            <div className="mt-1 flex items-center gap-2">
+              <Rating value={product.rating} size={14} showValue />
+              <span className="text-sm text-muted-foreground">
+                {product.numReviews}{" "}
+                {product.numReviews === 1 ? "review" : "reviews"}
+              </span>
+            </div>
+          </div>
+        </div>
+        <ReviewList productId={product._id} />
+        <p className="mt-4 text-xs text-muted-foreground">
+          Only customers with a delivered order for this product can post a
+          review. Submit yours from your{" "}
+          <Link to="/orders" className="text-accent hover:underline">
+            order history
+          </Link>
+          .
+        </p>
+      </section>
 
       {/* Related */}
       {relatedData?.products?.length > 0 && (

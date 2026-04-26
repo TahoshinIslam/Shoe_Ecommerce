@@ -1,5 +1,5 @@
 import rateLimit from "express-rate-limit";
-import { RedisStore } from "rate-limit-redis";
+import RedisStore from "rate-limit-redis";
 import { getRedisClient, isRedisReady } from "../config/redis.js";
 import logger from "../utils/logger.js";
 
@@ -56,26 +56,51 @@ const lazyStore = (prefix) => ({
   },
 });
 
-const limiter = (opts, prefix) =>
-  rateLimit({
+const isDev = process.env.NODE_ENV === "development";
+const isTest = process.env.NODE_ENV === "test";
+
+const limiter = (opts, prefix) => {
+  const { handler: userHandler, ...restOpts } = opts;
+
+  return rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     // Disable noisy validation warnings in tests — supertest's Unix socket
     // trips the ERR_ERL_DOUBLE_COUNT check falsely.
-    validate: process.env.NODE_ENV === "test" ? false : true,
-    ...opts,
+    validate: isTest ? false : true,
+    ...restOpts,
     store: lazyStore(prefix),
+    ...(userHandler && {
+      handler: (req, res, next, options) =>
+        userHandler(req, res, next, { ...options, prefix }),
+    }),
   });
+};
 
 // --- Limiters ---
 
 export const apiLimiter = limiter(
   {
-    windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-    max: Number(process.env.RATE_LIMIT_MAX) || 200,
+    // In development: disable rate limiting to prevent blocking during
+    // active development (React StrictMode doubles requests, HMR reloads, etc.)
+    // In production: enforce limits from env vars or sensible defaults.
+    windowMs: isDev
+      ? 1 // 1ms window effectively disables it in dev
+      : Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+    max: isDev
+      ? Number.MAX_SAFE_INTEGER // effectively unlimited in dev
+      : Number(process.env.RATE_LIMIT_MAX) || 200,
     message: {
       success: false,
       message: "Too many requests, please try again later",
+    },
+    // Log when someone hits the limit (only in non-dev)
+    handler: (req, res, next, options) => {
+      logger.warn(
+        { ip: req.ip, url: req.originalUrl, method: req.method },
+        `Rate limit exceeded for ${options.prefix}`,
+      );
+      res.status(options.statusCode).json(options.message);
     },
   },
   "api",

@@ -110,6 +110,24 @@ const reviewEndpoints = (b) => ({
     query: (id) => ({ url: `/reviews/${id}/helpful`, method: "POST" }),
     invalidatesTags: ["Review"],
   }),
+  // Admin
+  listAllReviews: b.query({
+    query: (params = {}) => {
+      const q = new URLSearchParams(
+        Object.entries(params).filter(([, v]) => v !== "" && v != null),
+      ).toString();
+      return `/reviews${q ? `?${q}` : ""}`;
+    },
+    providesTags: ["Review"],
+  }),
+  replyToReview: b.mutation({
+    query: ({ id, text }) => ({
+      url: `/reviews/${id}/reply`,
+      method: "POST",
+      body: { text },
+    }),
+    invalidatesTags: ["Review"],
+  }),
 });
 
 // ====== Coupons ======
@@ -315,6 +333,8 @@ export const {
   useUpdateReviewMutation,
   useDeleteReviewMutation,
   useMarkHelpfulMutation,
+  useListAllReviewsQuery,
+  useReplyToReviewMutation,
   useValidateCouponMutation,
   useListCouponsQuery,
   useCreateCouponMutation,

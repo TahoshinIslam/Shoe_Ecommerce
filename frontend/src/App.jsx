@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import Header from "./components/layout/Header.jsx";
 import Footer from "./components/layout/Footer.jsx";
 import CartDrawer from "./components/layout/CartDrawer.jsx";
+import SearchModal from "./components/layout/SearchModal.jsx";
+import ScrollToTop from "./components/layout/ScrollToTop.jsx";
 import { PrivateRoute, AdminRoute } from "./components/auth/RouteGuards.jsx";
 
 // Public pages
@@ -27,6 +29,7 @@ import AdminProductsPage from "./pages/admin/ProductsPage.jsx";
 import AdminOrdersPage from "./pages/admin/OrdersPage.jsx";
 import AdminUsersPage from "./pages/admin/UsersPage.jsx";
 import AdminCouponsPage from "./pages/admin/CouponsPage.jsx";
+import AdminReviewsPage from "./pages/admin/ReviewsPage.jsx";
 import AdminThemesPage from "./pages/admin/ThemesPage.jsx";
 import AdminSettingsPage from "./pages/admin/SettingsPage.jsx";
 
@@ -42,8 +45,10 @@ export default function App() {
 
   return (
     <div className="flex min-h-full flex-col">
+      <ScrollToTop />
       <Header />
       <CartDrawer />
+      <SearchModal />
 
       <main className="flex-1">
         <AnimatePresence mode="wait">
@@ -79,6 +84,7 @@ export default function App() {
                   <Route path="orders" element={<AdminOrdersPage />} />
                   <Route path="users" element={<AdminUsersPage />} />
                   <Route path="coupons" element={<AdminCouponsPage />} />
+                  <Route path="reviews" element={<AdminReviewsPage />} />
                   <Route path="themes" element={<AdminThemesPage />} />
                   <Route path="settings" element={<AdminSettingsPage />} />
                 </Route>

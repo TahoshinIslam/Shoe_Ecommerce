@@ -18,6 +18,8 @@ const baseUrl = import.meta.env.VITE_API_URL
   : "/api";
 
 const STORAGE_KEY = "ss:currency";
+const SETTINGS_CACHE_KEY = "ss:settings";
+const SETTINGS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Decide which currency to show:
@@ -35,17 +37,50 @@ const detectCurrency = (serverDefault) => {
   return "USD";
 };
 
+const getCachedSettings = () => {
+  try {
+    const raw = sessionStorage.getItem(SETTINGS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.ts > SETTINGS_CACHE_TTL) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+};
+
+const setCachedSettings = (data) => {
+  try {
+    sessionStorage.setItem(
+      SETTINGS_CACHE_KEY,
+      JSON.stringify({ ts: Date.now(), data }),
+    );
+  } catch {
+    // ignore storage errors
+  }
+};
+
 export const SettingsProvider = ({ children }) => {
-  const [settings, setSettings] = useState(DEFAULTS);
-  const [loaded, setLoaded] = useState(false);
-  const [activeCurrency, setActiveCurrencyState] = useState("USD"); // resolved later
+  const cached = getCachedSettings();
+  const [settings, setSettings] = useState(cached || DEFAULTS);
+  const [loaded, setLoaded] = useState(!!cached);
+  const [activeCurrency, setActiveCurrencyState] = useState(
+    detectCurrency(cached?.currency?.defaultDisplay || "USD"),
+  );
 
   useEffect(() => {
+    // Skip network fetch if we have valid cached settings
+    if (cached) {
+      setLoaded(true);
+      return;
+    }
+
     fetch(`${baseUrl}/settings/public`, { credentials: "include" })
       .then((r) => r.json())
       .then((d) => {
         if (d.success) {
           setSettings(d.settings);
+          setCachedSettings(d.settings);
           setActiveCurrencyState(detectCurrency(d.settings.currency.defaultDisplay));
         }
       })

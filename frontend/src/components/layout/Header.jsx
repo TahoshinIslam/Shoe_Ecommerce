@@ -93,18 +93,18 @@ export default function Header() {
           scrolled ? "glass shadow-soft" : "bg-background"
         )}
       >
-        <div className="container-x flex h-16 items-center justify-between gap-4">
+        <div className="container-x flex h-16 min-w-0 items-center justify-between gap-1 sm:gap-2">
           {/* Mobile menu btn */}
           <button
             onClick={() => dispatch(toggleMobileMenu())}
             aria-label="Open menu"
-            className="rounded-md p-2 text-foreground transition-colors hover:bg-muted lg:hidden focus-ring"
+            className="rounded-md p-2 text-foreground transition-colors hover:bg-muted lg:hidden focus-ring flex-shrink-0"
           >
             <Menu className="h-5 w-5" />
           </button>
 
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 focus-ring rounded-md">
+          <Link to="/" className="flex min-w-0 items-center gap-2 focus-ring rounded-md flex-shrink-0">
             {theme?.logoUrl ? (
               <img
                 src={isDark && theme.logoDarkUrl ? theme.logoDarkUrl : theme.logoUrl}
@@ -145,17 +145,17 @@ export default function Header() {
             <button
               onClick={() => dispatch(toggleSearch())}
               aria-label="Search"
-              className="rounded-md p-2 text-foreground transition-colors hover:bg-muted focus-ring"
+              className="rounded-md p-2 text-foreground transition-colors hover:bg-muted focus-ring flex-shrink-0"
             >
               <Search className="h-5 w-5" />
             </button>
 
-            <CurrencySwitcher />
+            <CurrencySwitcher className="hidden sm:inline-flex" />
             {theme?.features?.enableDarkMode !== false && (
               <button
                 onClick={toggleDark}
                 aria-label="Toggle dark mode"
-                className="rounded-md p-2 text-foreground transition-colors hover:bg-muted focus-ring"
+                className="rounded-md p-2 text-foreground transition-colors hover:bg-muted focus-ring flex-shrink-0"
               >
                 <AnimatePresence mode="wait">
                   <motion.span
@@ -176,7 +176,7 @@ export default function Header() {
               <Link
                 to={user ? "/wishlist" : "/login?redirect=/wishlist"}
                 aria-label="Wishlist"
-                className="relative rounded-md p-2 text-foreground transition-colors hover:bg-muted focus-ring"
+                className="relative rounded-md p-2 text-foreground transition-colors hover:bg-muted focus-ring flex-shrink-0"
               >
                 <Heart className="h-5 w-5" />
                 {wlCount > 0 && (
@@ -190,7 +190,7 @@ export default function Header() {
             <button
               onClick={() => dispatch(toggleCart())}
               aria-label="Cart"
-              className="relative rounded-md p-2 text-foreground transition-colors hover:bg-muted focus-ring"
+              className="relative rounded-md p-2 text-foreground transition-colors hover:bg-muted focus-ring flex-shrink-0"
             >
               <ShoppingBag className="h-5 w-5" />
               {cartCount > 0 && (
@@ -211,7 +211,7 @@ export default function Header() {
               <div className="relative">
                 <button
                   onClick={() => setUserMenuOpen((v) => !v)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-sm font-bold text-foreground transition-colors hover:bg-muted-foreground/20 focus-ring"
+                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-bold text-foreground transition-colors hover:bg-muted-foreground/20 focus-ring"
                   aria-label="User menu"
                 >
                   {user.avatar ? (
@@ -232,7 +232,7 @@ export default function Header() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         transition={{ duration: 0.15 }}
-                        className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-md border border-border bg-background shadow-hover"
+                        className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-md border border-border bg-background shadow-hover"
                       >
                         <div className="border-b border-border p-3">
                           <p className="text-sm font-semibold truncate">{user.name}</p>

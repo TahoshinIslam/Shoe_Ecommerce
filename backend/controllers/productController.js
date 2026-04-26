@@ -14,12 +14,26 @@ const ALLOWED_FILTER_FIELDS = new Set([
   "basePrice",
 ]);
 
+// Escape regex special chars so user input can't blow up the query
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // Build a safe Mongo filter from whitelisted query keys only.
 const buildFilter = (query, base = {}) => {
   const { search, featured } = query;
   const filter = {};
 
-  if (search) filter.$text = { $search: String(search) };
+  if (search) {
+    // Substring + case-insensitive across name, color, material and tags so
+    // partial keystrokes ("ai", "n") still surface relevant products. $text
+    // only matched whole stemmed words, which felt broken to users.
+    const rx = new RegExp(escapeRegex(search), "i");
+    filter.$or = [
+      { name: rx },
+      { color: rx },
+      { material: rx },
+      { tags: rx },
+    ];
+  }
   if (featured === "true" || featured === "1") filter.isFeatured = true;
 
   for (const [key, val] of Object.entries(query)) {
