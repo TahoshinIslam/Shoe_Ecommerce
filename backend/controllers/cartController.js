@@ -89,6 +89,14 @@ export const updateCartItem = asyncHandler(async (req, res) => {
     (i) => i.product?.toString() === productId && i.size === size,
   );
   if (idx < 0) {
+    // Idempotent delete: if quantity <= 0 and item is already gone, desired state is achieved
+    if (quantity <= 0) {
+      await cart.populate(
+        "items.product",
+        "name images basePrice discountPrice slug",
+      );
+      return res.json({ success: true, cart });
+    }
     res.status(404);
     throw new Error("Item not in cart");
   }

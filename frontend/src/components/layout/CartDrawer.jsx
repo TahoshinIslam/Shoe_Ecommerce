@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { Link, useNavigate } from "react-router-dom";
 import { Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
@@ -23,6 +24,7 @@ export default function CartDrawer() {
   const { data, isLoading } = useGetCartQuery(undefined, { skip: !user });
   const [updateItem] = useUpdateCartItemMutation();
   const [removeItem] = useRemoveFromCartMutation();
+  const [updatingKeys, setUpdatingKeys] = useState(new Set());
 
   const items = data?.cart?.items || [];
   const subtotal = items.reduce((sum, i) => {
@@ -32,19 +34,39 @@ export default function CartDrawer() {
     return sum + price * i.quantity;
   }, 0);
 
+  const isUpdating = (productId, size) => updatingKeys.has(`${productId}-${size}`);
+
+  const setUpdating = (productId, size, pending) => {
+    const key = `${productId}-${size}`;
+    setUpdatingKeys((prev) => {
+      const next = new Set(prev);
+      if (pending) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
+
   const handleQty = async (productId, size, newQty) => {
+    if (isUpdating(productId, size)) return;
+    setUpdating(productId, size, true);
     try {
       await updateItem({ productId, size, quantity: newQty }).unwrap();
     } catch (e) {
       toast.error(e?.data?.message || "Could not update");
+    } finally {
+      setUpdating(productId, size, false);
     }
   };
 
   const handleRemove = async (productId, size) => {
+    if (isUpdating(productId, size)) return;
+    setUpdating(productId, size, true);
     try {
       await removeItem({ productId, size }).unwrap();
     } catch {
       toast.error("Could not remove");
+    } finally {
+      setUpdating(productId, size, false);
     }
   };
 
@@ -127,7 +149,8 @@ export default function CartDrawer() {
                           onClick={() =>
                             handleQty(p._id, item.size, Math.max(0, item.quantity - 1))
                           }
-                          className="px-2 py-1 text-muted-foreground hover:text-foreground"
+                          disabled={isUpdating(p._id, item.size)}
+                          className="px-2 py-1 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
                           aria-label="Decrease"
                         >
                           <Minus className="h-3 w-3" />
@@ -135,7 +158,8 @@ export default function CartDrawer() {
                         <span className="px-2 text-sm font-medium">{item.quantity}</span>
                         <button
                           onClick={() => handleQty(p._id, item.size, item.quantity + 1)}
-                          className="px-2 py-1 text-muted-foreground hover:text-foreground"
+                          disabled={isUpdating(p._id, item.size)}
+                          className="px-2 py-1 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
                           aria-label="Increase"
                         >
                           <Plus className="h-3 w-3" />
@@ -147,8 +171,9 @@ export default function CartDrawer() {
                         </span>
                         <button
                           onClick={() => handleRemove(p._id, item.size)}
+                          disabled={isUpdating(p._id, item.size)}
                           aria-label="Remove"
-                          className="rounded p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger"
+                          className="rounded p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>

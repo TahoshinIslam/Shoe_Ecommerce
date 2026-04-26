@@ -1,8 +1,9 @@
-# Fix Horizontal Scrollbar & Icon Cut-off on Small Screens
+# Cart Race Condition & Abuse Protection Fix
 
 ## Steps
 
-- [x] 1. Update `frontend/src/components/layout/Header.jsx` — add flex-shrink controls, min-w-0, overflow-hidden, and hide non-essential icons on very small screens.
-- [x] 2. Update `frontend/src/components/layout/CurrencySwitcher.jsx` — add flex-shrink-0 to prevent squishing.
-- [x] 3. Update `frontend/src/index.css` — add global overflow-x-hidden to body/#root as safety net.
-- [ ] 4. Verify in Chrome DevTools at 320px–375px widths.
+- [x] 1. Update `frontend/src/components/layout/CartDrawer.jsx` — track pending updates per item, disable +/- buttons during mutation
+- [x] 2. Update `backend/controllers/cartController.js` — make `updateCartItem` idempotent when removing already-removed items
+- [x] 3. Update `backend/middleware/rateLimiter.js` — add `cartMutationLimiter` (30 req/min)
+- [x] 4. Update `backend/routes/cartRoutes.js` — apply `cartMutationLimiter` to write routes
+- [x] 5. Test rapid clicking in cart drawer

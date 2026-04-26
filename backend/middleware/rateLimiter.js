@@ -131,6 +131,18 @@ export const passwordLimiter = limiter(
   "password",
 );
 
+export const cartMutationLimiter = limiter(
+  {
+    windowMs: isDev || isTest ? 1 : 60 * 1000, // 1 minute
+    max: isDev || isTest ? Number.MAX_SAFE_INTEGER : 30,
+    message: {
+      success: false,
+      message: "Too many cart updates, please slow down",
+    },
+  },
+  "cart",
+);
+
 // Startup warning if Redis isn't wired up at all
 if (!process.env.REDIS_URL) {
   logger.warn(
